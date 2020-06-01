@@ -1,6 +1,8 @@
 /*
 Copyright 2019 The HAProxy Ingress Controller Authors.
 
+Updated by Ivan Kotegov 2020.
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at

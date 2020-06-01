@@ -9,7 +9,7 @@ include container.mk
 GOOS=linux
 GOARCH?=amd64
 GIT_REPO=$(shell git config --get remote.origin.url)
-ROOT_PKG=github.com/jcmoraisjr/haproxy-ingress/pkg
+ROOT_PKG=/home/admin/Documents/Project/brownout_project/haproxy-ingress/pkg
 
 .PHONY: build
 build:
