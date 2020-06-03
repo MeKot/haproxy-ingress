@@ -18,6 +18,7 @@ package haproxy
 
 import (
 	"fmt"
+	"github.com/jcmoraisjr/haproxy-ingress/pkg/haproxy/brownout"
 	"reflect"
 	"sort"
 	"strconv"
@@ -29,13 +30,14 @@ import (
 )
 
 type dynUpdater struct {
-	logger  types.Logger
-	old     *config
-	cur     *config
-	socket  string
-	cmd     func(socket string, observer func(duration time.Duration), commands ...string) ([]string, error)
-	cmdCnt  int
-	metrics types.Metrics
+	logger   types.Logger
+	old      *config
+	cur      *config
+	socket   string
+	cmd      func(socket string, observer func(duration time.Duration), commands ...string) ([]string, error)
+	cmdCnt   int
+	metrics  types.Metrics
+	brownout brownout.Controller
 }
 
 type backendPair struct {
@@ -63,6 +65,8 @@ func (i *instance) newDynUpdater() *dynUpdater {
 		socket:  i.curConfig.Global().AdminSocket,
 		cmd:     utils.HAProxyCommand,
 		metrics: i.metrics,
+		brownout: brownout.GetController(brownout.PID, i.curConfig.Global().AdminSocket, i.curConfig.Global().BrownoutRules,
+			i.logger),
 	}
 }
 
@@ -126,6 +130,7 @@ func (d *dynUpdater) checkConfigPair() bool {
 	// true if deep equals or sucessfully updated
 	// false if cannot be dynamically updated or update failed
 	for _, pair := range backends {
+		d.brownout.Update(pair.cur.Name)
 		if !d.checkBackendPair(pair) {
 			return false
 		}

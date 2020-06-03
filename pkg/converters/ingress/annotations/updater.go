@@ -130,6 +130,8 @@ func (c *updater) UpdateGlobalConfig(haproxyConfig haproxy.Config, mapper *Mappe
 	c.buildGlobalStats(d)
 	c.buildGlobalSyslog(d)
 	c.buildGlobalTimeout(d)
+	c.logger.Info("About to buildGlobalBrownoutTargets")
+	c.buildGlobalBrownoutTargets(d, mapper)
 }
 
 func (c *updater) UpdateHostConfig(host *hatypes.Host, mapper *Mapper) {
@@ -180,4 +182,9 @@ func (c *updater) UpdateBackendConfig(backend *hatypes.Backend, mapper *Mapper) 
 	c.buildBackendWAF(data)
 	c.buildBackendWhitelistHTTP(data)
 	c.buildBackendWhitelistTCP(data)
+}
+
+func (c *updater) buildGlobalBrownoutTargets(d *globalData, mapper *Mapper) {
+	c.logger.Info("Setting brownout rules to be %q", mapper.Get(ingtypes.BrownoutTargets).String())
+	d.global.BrownoutRules = mapper.Get(ingtypes.BrownoutTargets).String()
 }

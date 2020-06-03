@@ -92,4 +92,6 @@ const (
 	GlobalUseHAProxyUser               = "use-haproxy-user"
 	GlobalUseHTX                       = "use-htx"
 	GlobalUseProxyProtocol             = "use-proxy-protocol"
+
+	BrownoutTargets = "brownout-targets"
 )

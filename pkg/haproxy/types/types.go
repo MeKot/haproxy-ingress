@@ -62,6 +62,7 @@ type Global struct {
 	CustomConfig    []string
 	CustomDefaults  []string
 	CustomFrontend  []string
+	BrownoutRules   string
 }
 
 // GlobalBindConfig ...

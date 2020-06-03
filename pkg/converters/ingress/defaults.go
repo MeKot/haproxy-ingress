@@ -97,5 +97,6 @@ func createDefaults() map[string]string {
 		types.GlobalTLSALPN:                      "h2,http/1.1",
 		types.GlobalUseForwardedProto:            "true",
 		types.GlobalUseHTX:                       "true",
+		types.BrownoutTargets:                    "{}",
 	}
 }
