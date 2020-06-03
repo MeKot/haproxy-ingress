@@ -32,8 +32,9 @@ func GetController(t ControllerType, socket string, config string, logger types.
 	logger.Info("Trying to parse the config, which is: %q", config)
 	_ = json.Unmarshal([]byte(config), &c)
 	logger.Info("The config was parsed:\n")
+	logger.Info("%d configurations parsed\n", len(c.Targets))
 	for key, value := range c.Targets {
-		logger.Info("%q : %+v", key, value)
+		logger.Info("%q : %+v\n\n", key, value)
 	}
 	switch t {
 	case PID:
