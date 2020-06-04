@@ -66,7 +66,7 @@ func (i *instance) newDynUpdater() *dynUpdater {
 		cmd:     utils.HAProxyCommand,
 		metrics: i.metrics,
 		brownout: brownout.GetController(brownout.PID, i.curConfig.Global().AdminSocket, i.curConfig.Global().BrownoutRules,
-			i.logger),
+			i.logger, i.metrics),
 	}
 }
 
@@ -130,7 +130,8 @@ func (d *dynUpdater) checkConfigPair() bool {
 	// true if deep equals or sucessfully updated
 	// false if cannot be dynamically updated or update failed
 	for _, pair := range backends {
-		d.brownout.Update(pair.cur.Name)
+		// Run brownout on the backends
+		d.brownout.Update(pair.cur)
 		if !d.checkBackendPair(pair) {
 			return false
 		}

@@ -175,3 +175,7 @@ func (m *metrics) IncCertSigningExpiring(domains string, success bool) {
 func (m *metrics) IncCertSigningOutdated(domains string, success bool) {
 	m.certSigningCounter.WithLabelValues(domains, "outdated", strconv.FormatBool(success)).Inc()
 }
+
+func (m *metrics) BrownoutFeaturesDisabled(duration time.Duration) {
+
+}

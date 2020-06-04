@@ -34,4 +34,5 @@ type Metrics interface {
 	IncCertSigningMissing(domains string, success bool)
 	IncCertSigningExpiring(domains string, success bool)
 	IncCertSigningOutdated(domains string, success bool)
+	BrownoutFeaturesDisabled(duration time.Duration)
 }
