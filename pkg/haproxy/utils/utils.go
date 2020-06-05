@@ -67,7 +67,7 @@ func HAProxyCommandWithReturn(socket string, observer func(duration time.Duratio
 		} else if sent != len(cmd) {
 			return msg, fmt.Errorf("incomplete data sent to unix socket %s", socket)
 		}
-		readBuffer := make([]byte, 1024)
+		readBuffer := make([]byte, 2048)
 		if r, err := c.Read(readBuffer); err != nil {
 			return msg, fmt.Errorf("error reading response buffer: %v", err)
 		} else if r > 2 {
