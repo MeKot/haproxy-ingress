@@ -18,7 +18,6 @@ package haproxy
 
 import (
 	"fmt"
-	"github.com/jcmoraisjr/haproxy-ingress/pkg/haproxy/brownout"
 	"reflect"
 	"sort"
 	"strconv"
@@ -37,7 +36,7 @@ type dynUpdater struct {
 	cmd      func(socket string, observer func(duration time.Duration), commands ...string) ([]string, error)
 	cmdCnt   int
 	metrics  types.Metrics
-	brownout brownout.Controller
+	brownout Controller
 }
 
 type backendPair struct {
@@ -50,7 +49,7 @@ type epPair struct {
 	cur *hatypes.Endpoint
 }
 
-func (i *instance) newDynUpdater() *dynUpdater {
+func (i *instance) newDynUpdater(brownout Controller) *dynUpdater {
 	var old, cur *config
 	if i.oldConfig != nil {
 		old = i.oldConfig.(*config)
@@ -59,14 +58,13 @@ func (i *instance) newDynUpdater() *dynUpdater {
 		cur = i.curConfig.(*config)
 	}
 	return &dynUpdater{
-		logger:  i.logger,
-		old:     old,
-		cur:     cur,
-		socket:  i.curConfig.Global().AdminSocket,
-		cmd:     utils.HAProxyCommand,
-		metrics: i.metrics,
-		brownout: brownout.GetController(brownout.PID, i.curConfig.Global().AdminSocket, i.curConfig.Global().BrownoutRules,
-			i.logger, i.metrics),
+		logger:   i.logger,
+		old:      old,
+		cur:      cur,
+		socket:   i.curConfig.Global().AdminSocket,
+		cmd:      utils.HAProxyCommand,
+		metrics:  i.metrics,
+		brownout: brownout,
 	}
 }
 
@@ -182,9 +180,11 @@ func (d *dynUpdater) checkBackendPair(pair *backendPair) bool {
 	var empty []string
 	for _, endpoint := range oldBack.Endpoints {
 		if endpoint.Enabled {
+			d.logger.InfoV(2, "%q is Enabled, queued for matching", endpoint.TargetRef)
 			endpoints[endpoint.Target] = &epPair{old: endpoint}
 			targets = append(targets, endpoint.Target)
 		} else {
+			d.logger.InfoV(2, "%q is Disabled, placed in empty", endpoint.Name)
 			empty = append(empty, endpoint.Name)
 		}
 	}
@@ -199,9 +199,11 @@ func (d *dynUpdater) checkBackendPair(pair *backendPair) bool {
 	var added []*hatypes.Endpoint
 	for _, endpoint := range curBack.Endpoints {
 		if pair, found := endpoints[endpoint.Target]; found {
+			d.logger.InfoV(2, "Matched current backend %q", endpoint.TargetRef)
 			endpoint.Name = pair.old.Name
 			pair.cur = endpoint
 		} else {
+			d.logger.InfoV(2, "No match for current backend %q", endpoint.TargetRef)
 			added = append(added, endpoint)
 		}
 	}
@@ -289,6 +291,7 @@ func (d *dynUpdater) alignSlots() {
 
 func (d *dynUpdater) execDisableEndpoint(backname string, ep *hatypes.Endpoint) bool {
 	server := fmt.Sprintf("set server %s/%s ", backname, ep.Name)
+	d.logger.InfoV(2, "Switching the server: %q / %q into maintenance", backname, ep.Name)
 	cmd := []string{
 		server + "state maint",
 		server + "addr 127.0.0.1 port 1023",
@@ -308,6 +311,7 @@ func (d *dynUpdater) execDisableEndpoint(backname string, ep *hatypes.Endpoint) 
 
 func (d *dynUpdater) execEnableEndpoint(backname string, oldEP, curEP *hatypes.Endpoint) bool {
 	state := map[bool]string{true: "ready", false: "drain"}[curEP.Weight > 0]
+	d.logger.InfoV(2, "Enabling the server: %q / %q into the %q state", backname, curEP.Name, state)
 	server := fmt.Sprintf("set server %s/%s ", backname, curEP.Name)
 	cmd := []string{
 		server + "addr " + curEP.IP + " port " + strconv.Itoa(curEP.Port),

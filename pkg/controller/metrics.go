@@ -24,15 +24,17 @@ import (
 )
 
 type metrics struct {
-	responseTime       *prometheus.HistogramVec
-	ctlProcTimeSum     *prometheus.CounterVec
-	ctlProcCount       *prometheus.CounterVec
-	procSecondsCounter *prometheus.CounterVec
-	updatesCounter     *prometheus.CounterVec
-	updateSuccessGauge *prometheus.GaugeVec
-	certExpireGauge    *prometheus.GaugeVec
-	certSigningCounter *prometheus.CounterVec
-	lastTrack          time.Time
+	responseTime            *prometheus.HistogramVec
+	ctlProcTimeSum          *prometheus.CounterVec
+	ctlProcCount            *prometheus.CounterVec
+	procSecondsCounter      *prometheus.CounterVec
+	updatesCounter          *prometheus.CounterVec
+	updateSuccessGauge      *prometheus.GaugeVec
+	certExpireGauge         *prometheus.GaugeVec
+	certSigningCounter      *prometheus.CounterVec
+	backendResponseTimes    *prometheus.HistogramVec
+	backendFeaturesDisabled *prometheus.GaugeVec
+	lastTrack               time.Time
 }
 
 func createMetrics(bucketsResponseTime []float64) *metrics {
@@ -103,6 +105,23 @@ func createMetrics(bucketsResponseTime []float64) *metrics {
 			},
 			[]string{"domains", "reason", "success"},
 		),
+		backendResponseTimes: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Namespace: namespace,
+				Name:      "backend_response_time_seconds",
+				Help:      "Response times of the backends",
+				Buckets:   []float64{0.3, 0.6, 1, 2, 3, 4, 5},
+			},
+			[]string{"backend"},
+		),
+		backendFeaturesDisabled: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "backend_feature_status",
+				Help:      "Feature status per backend (0 - 1), used to rate limit",
+			},
+			[]string{"backend", "feature"},
+		),
 	}
 	prometheus.MustRegister(metrics.responseTime)
 	prometheus.MustRegister(metrics.ctlProcTimeSum)
@@ -112,6 +131,8 @@ func createMetrics(bucketsResponseTime []float64) *metrics {
 	prometheus.MustRegister(metrics.updateSuccessGauge)
 	prometheus.MustRegister(metrics.certExpireGauge)
 	prometheus.MustRegister(metrics.certSigningCounter)
+	prometheus.MustRegister(metrics.backendResponseTimes)
+	prometheus.MustRegister(metrics.backendFeaturesDisabled)
 	return metrics
 }
 
@@ -176,6 +197,10 @@ func (m *metrics) IncCertSigningOutdated(domains string, success bool) {
 	m.certSigningCounter.WithLabelValues(domains, "outdated", strconv.FormatBool(success)).Inc()
 }
 
-func (m *metrics) BrownoutFeaturesDisabled(duration time.Duration) {
+func (m *metrics) SetBrownOutFeatureStatus(backend string, feature string, currentValue float64) {
+	m.backendFeaturesDisabled.WithLabelValues(backend, feature).Set(currentValue)
+}
 
+func (m *metrics) SetBackendResponseTime(backend string, duration time.Duration) {
+	m.backendResponseTimes.WithLabelValues(backend).Observe(duration.Seconds())
 }

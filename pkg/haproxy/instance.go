@@ -280,7 +280,8 @@ func (i *instance) haproxyUpdate(timer *utils.Timer) {
 		i.metrics.IncUpdateNoop()
 		return
 	}
-	updater := i.newDynUpdater()
+	brownout := i.GetController(PID)
+	updater := i.newDynUpdater(brownout)
 	updated := updater.update()
 	if !updated || updater.cmdCnt > 0 {
 		// only need to rewrtite config files if:
