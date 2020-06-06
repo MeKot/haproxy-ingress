@@ -37,6 +37,15 @@ type Acme struct {
 	Socket  string
 }
 
+type Brownout struct {
+	LastRun             time.Time
+	IntervalBetweenRuns time.Duration
+	Enabled             bool
+	Rates               map[string]int
+	Rules               string
+	ACLMapPath          string
+}
+
 // Global ...
 type Global struct {
 	Bind            GlobalBindConfig
@@ -62,7 +71,6 @@ type Global struct {
 	CustomConfig    []string
 	CustomDefaults  []string
 	CustomFrontend  []string
-	BrownoutRules   string
 }
 
 // GlobalBindConfig ...

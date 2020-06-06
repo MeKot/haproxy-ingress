@@ -56,6 +56,7 @@ type globalData struct {
 	acmeData *hatypes.AcmeData
 	acme     *hatypes.Acme
 	global   *hatypes.Global
+	brownout *hatypes.Brownout
 	mapper   *Mapper
 }
 
@@ -104,6 +105,7 @@ func (c *updater) UpdateGlobalConfig(haproxyConfig haproxy.Config, mapper *Mappe
 		acmeData: haproxyConfig.AcmeData(),
 		acme:     haproxyConfig.Acme(),
 		global:   haproxyConfig.Global(),
+		brownout: haproxyConfig.Brownout(),
 		mapper:   mapper,
 	}
 	d.global.AdminSocket = "/var/run/haproxy-stats.sock"
@@ -185,6 +187,8 @@ func (c *updater) UpdateBackendConfig(backend *hatypes.Backend, mapper *Mapper) 
 }
 
 func (c *updater) buildGlobalBrownoutTargets(d *globalData, mapper *Mapper) {
-	c.logger.Info("Setting brownout rules to be %q", mapper.Get(ingtypes.BrownoutTargets).String())
-	d.global.BrownoutRules = mapper.Get(ingtypes.BrownoutTargets).String()
+	c.logger.InfoV(2, "Activating Brownout")
+	d.brownout.Enabled = true
+	c.logger.InfoV(2, "Setting brownout rules to be %q", mapper.Get(ingtypes.BrownoutTargets).String())
+	d.brownout.Rules = mapper.Get(ingtypes.BrownoutTargets).String()
 }

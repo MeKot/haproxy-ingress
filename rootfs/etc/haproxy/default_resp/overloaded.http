@@ -1,3 +1,8 @@
+HTTP/1.1 429 Too Many Requests
+Cache-Control: no-cache
+Content-Type: text/html
+Retry-After: 60
+
 <!DOCTYPE html>
 <html lang="en">
 <head>

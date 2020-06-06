@@ -255,6 +255,7 @@ func (d *dynUpdater) alignSlots() {
 		return
 	}
 	for _, back := range d.cur.Backends().Items() {
+		d.brownout.Update(back)
 		if !back.Dynamic.DynUpdate {
 			// no need to add empty slots if won't dynamically update
 			continue

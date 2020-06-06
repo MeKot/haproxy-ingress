@@ -608,6 +608,16 @@ backend _error404
     http-request use-service lua.send-404
 {{- end }}
 
+  # # # # # # # # # # # # # # # # # # #
+ # #
+ #     Brownout backend
+ #
+  backend brownout_backend
+  mode http
+  timeout tarpit 1s
+  errorfile 429 /etc/haproxy/default_resp/overloaded.http
+  http-request tarpit
+
 {{- if $fmaps }}
 
 
@@ -699,6 +709,23 @@ frontend _front_http
     bind {{ $global.Bind.FrontingBind }}
         {{- if and $hasPlainHTTPSocket $global.Bind.FrontingSockID }} id {{ $global.Bind.FrontingSockID }}{{ end }}
         {{- if $global.Bind.AcceptProxy }} accept-proxy{{ end }}
+{{- end }}
+
+{{- /*------------------------------------*/}}
+{{- if $cfg.Brownout.Enabled }}
+    stick-table  type string  len 32  size 100k  expire 10s  store http_req_rate(10s)
+
+    # Parameterise the default rate limit?
+    http-request set-var(req.rate_limit) path,map_beg({{$cfg.Brownout.ACLMapPath}},1000)
+
+    # Parameterise this?
+    http-request track-sc0 cook(JSESSIONID)
+
+    http-request set-var(req.request_rate)  cook(JSESSIONID),table_http_req_rate()
+
+    # Perform the ACL action
+    acl brownout_rate_limiting var(req.rate_limit),sub(req.request_rate) lt 0
+
 {{- end }}
 
 {{- /*------------------------------------*/}}
@@ -814,6 +841,9 @@ frontend _front_http
 {{- end }}
 
 {{- /*------------------------------------*/}}
+{{- if $cfg.Brownout.Enabled }}
+    use_backend brownout_backend if brownout_rate_limiting
+{{end}}
 {{- if $acmeexclusive }}
     use_backend _acme_challenge if acme-challenge
 {{- end }}

@@ -35,8 +35,10 @@ type Config interface {
 	SyncConfig()
 	WriteFrontendMaps() error
 	WriteBackendMaps() error
+	WriteBrownoutMaps() error
 	AcmeData() *hatypes.AcmeData
 	Acme() *hatypes.Acme
+	Brownout() *hatypes.Brownout
 	Global() *hatypes.Global
 	TCPBackends() []*hatypes.TCPBackend
 	Hosts() *hatypes.Hosts
@@ -50,6 +52,7 @@ type config struct {
 	acmeData *hatypes.AcmeData
 	// haproxy internal state
 	acme            *hatypes.Acme
+	brownout        *hatypes.Brownout
 	mapsTemplate    *template.Config
 	mapsDir         string
 	global          *hatypes.Global
@@ -74,6 +77,7 @@ func createConfig(options options) *config {
 	return &config{
 		acmeData:     &hatypes.AcmeData{},
 		acme:         &hatypes.Acme{},
+		brownout:     &hatypes.Brownout{ACLMapPath: options.mapsDir + "/_brownout_rates.map"},
 		global:       &hatypes.Global{},
 		frontend:     &hatypes.Frontend{Name: "_front001"},
 		hosts:        hatypes.CreateHosts(),
@@ -346,6 +350,17 @@ func (c *config) WriteBackendMaps() error {
 	return writeMaps(mapBuilder, c.mapsTemplate)
 }
 
+// Updates the ACL maps used by HAProxy to rate-limit incoming requests and implement brownout
+// Must be called before reloading the proxy, can be called after main config write
+func (c *config) WriteBrownoutMaps() error {
+	mapBuilder := hatypes.CreateMaps()
+	limitsMap := mapBuilder.AddMap(c.mapsDir + "/_brownout_rates.map")
+	for path, limit := range c.brownout.Rates {
+		limitsMap.AppendPath(path, fmt.Sprintf("%d", limit))
+	}
+	return writeMaps(mapBuilder, c.mapsTemplate)
+}
+
 func writeMaps(maps *hatypes.HostsMaps, template *template.Config) error {
 	for _, hmap := range maps.Items {
 		if err := template.WriteOutput(hmap.Match, hmap.MatchFile); err != nil {
@@ -366,6 +381,10 @@ func (c *config) AcmeData() *hatypes.AcmeData {
 
 func (c *config) Acme() *hatypes.Acme {
 	return c.acme
+}
+
+func (c *config) Brownout() *hatypes.Brownout {
+	return c.brownout
 }
 
 func (c *config) Global() *hatypes.Global {

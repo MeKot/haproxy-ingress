@@ -21,7 +21,8 @@ const (
 )
 
 type Controller interface {
-	Update(backend *hatypes.Backend) bool
+	Update(backend *hatypes.Backend)
+	NeedsReload() bool
 }
 
 type TargetConfig struct {
@@ -36,8 +37,8 @@ type BrownoutConfig struct {
 func (i *instance) GetController(t ControllerType) Controller {
 	var c BrownoutConfig
 	logger := i.logger
-	logger.InfoV(2, "Trying to parse the config, which is: %q", i.curConfig.Global().BrownoutRules)
-	_ = json.Unmarshal([]byte(i.curConfig.Global().BrownoutRules), &c)
+	logger.InfoV(2, "Trying to parse the config, which is: %q", i.curConfig.Brownout().Rules)
+	_ = json.Unmarshal([]byte(i.curConfig.Brownout().Rules), &c)
 	logger.InfoV(2, "The config was parsed:\n")
 	logger.InfoV(2, "%d configurations parsed\n", len(c.Targets))
 	for key, value := range c.Targets {
@@ -46,6 +47,7 @@ func (i *instance) GetController(t ControllerType) Controller {
 	switch t {
 	case PID:
 		return &PIDController{
+			needsReload:   false,
 			logger:        logger,
 			targets:       c.Targets,
 			disabledPaths: nil,
@@ -62,6 +64,7 @@ func (i *instance) GetController(t ControllerType) Controller {
 
 // PIDController used to perform runtime updates
 type PIDController struct {
+	needsReload   bool
 	logger        types.Logger
 	targets       map[string]TargetConfig
 	disabledPaths map[string]map[string]float32
@@ -72,8 +75,7 @@ type PIDController struct {
 }
 
 // Coordinates metric collection and updates the config with any necessary action
-func (c *PIDController) Update(backend *hatypes.Backend) bool {
-	c.logger.InfoV(2, "Updating the backend %q", backend.Name)
+func (c *PIDController) Update(backend *hatypes.Backend) {
 	c.logger.InfoV(2, "The backend has the ID of: %q", backend.ID)
 	c.logger.InfoV(2, "Current config is:")
 	c.logger.InfoV(2, "%+v", c.targets)
@@ -81,12 +83,17 @@ func (c *PIDController) Update(backend *hatypes.Backend) bool {
 	stats, err := c.readStats(backend.ID)
 	if err != nil {
 		c.logger.Error(err.Error())
-		return false
+		return
 	}
 
-	c.recordResponseTime(backend.Name, stats)
+	// Have to use ID here, as prometheus only exports backend IDs
+	c.recordResponseTime(backend.ID, stats)
 
-	return c.execApplyACL(backend, c.getAdjustment(backend.ID, stats))
+	c.needsReload = c.execApplyACL(backend, c.getAdjustment(backend.Name, stats))
+}
+
+func (c *PIDController) NeedsReload() bool {
+	return c.needsReload
 }
 
 func (c *PIDController) execApplyACL(backend *hatypes.Backend, adjustment float64) bool {
@@ -101,8 +108,8 @@ func (c *PIDController) execApplyACL(backend *hatypes.Backend, adjustment float6
 	if adjustment > 0 {
 		for _, path := range nonEssentialPaths {
 			if _, found := c.disabledPaths[backend.Name][path]; !found {
-				c.logger.InfoV(2, "Disabling the path: %q for backend", path, backend.Name)
-				//cmd := fmt.Sprintf("show stat %s 2 -1", backend.Name)
+				c.logger.InfoV(2, "Disabling the path: %q for backend %q", path, backend.Name)
+				c.addRateLimitToConfig(path, adjustment)
 				return true
 			}
 		}
@@ -115,24 +122,33 @@ func (c *PIDController) getAdjustment(backend string, stats map[string]string) f
 	// The PID controller
 	var response float64 = 0
 
+	c.logger.InfoV(2, "Targets for backend are: %v", c.targets[backend].Targets)
+	c.logger.InfoV(2, "About to go into the loop for %d iterations", len(c.targets[backend].Targets))
 	for metric, target := range c.targets[backend].Targets {
+		c.logger.InfoV(2, "Found a target for %q, which is %d", metric, target)
 		if current, ok := stats[metric]; ok {
-			t, err := strconv.ParseInt(current, 10, 64)
+			c.logger.InfoV(2, "Stats have the metric with value %q", current)
+			cur, err := strconv.ParseInt(current, 10, 64)
 			if err != nil {
 				c.logger.Error("Failed to parse an int from %q", current)
 				continue
 			}
 
-			if t < target {
-				response++
+			c.logger.InfoV(2, "Parsed the value to %d", cur)
+
+			if cur < target {
+				c.logger.InfoV(2, "Decrementing response")
+				response--
 				continue
 			}
-			if t > target {
-				response--
+			if cur > target {
+				c.logger.InfoV(2, "Incrementing response")
+				response++
 				continue
 			}
 		}
 	}
+	c.logger.InfoV(2, "Calculated response to be %f", response)
 
 	return response
 }
@@ -149,8 +165,6 @@ func (c *PIDController) readStats(id string) (map[string]string, error) {
 	if len(msg) != 2 {
 		return map[string]string{}, errors.New(fmt.Sprintf("Unexpected return from HAProxy %v", msg))
 	}
-	c.logger.InfoV(2, "HAProxy response for keys: %v", msg[0])
-	c.logger.InfoV(2, "HAProxy response for values: %v", msg[1])
 
 	r := csv.NewReader(strings.NewReader(strings.Join(msg, "\n")))
 	keys, err := r.Read()
@@ -192,4 +206,9 @@ func (c *PIDController) recordResponseTime(backend string, stats map[string]stri
 
 	c.metrics.SetBackendResponseTime(backend, rtime)
 
+}
+
+// Adds Rate Limiting ACL to the config, enforcing brownout at the LB level
+func (c *PIDController) addRateLimitToConfig(path string, rate float64) {
+	c.currConfig.brownout.Rates[path] = int(rate * 100)
 }

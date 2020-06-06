@@ -283,11 +283,16 @@ func (i *instance) haproxyUpdate(timer *utils.Timer) {
 	brownout := i.GetController(PID)
 	updater := i.newDynUpdater(brownout)
 	updated := updater.update()
-	if !updated || updater.cmdCnt > 0 {
-		// only need to rewrtite config files if:
+	if !updated || updater.cmdCnt > 0 || brownout.NeedsReload() {
+		// only need to rewrite config files if:
+		//   - brownout.NeedsReload() - the brownout maps have changed, need to restart the proxy to reload them
 		//   - !updated           - there are changes that cannot be dynamically applied
 		//   - updater.cmdCnt > 0 - there are changes that was dynamically applied
-		err := i.templates.Write(i.curConfig)
+		err := i.curConfig.WriteBrownoutMaps()
+		if err != nil {
+			i.logger.Error("failed to update the brownout map: %v", err)
+		}
+		err = i.templates.Write(i.curConfig)
 		timer.Tick("write_tmpl")
 		if err != nil {
 			i.logger.Error("error writing configuration: %v", err)
@@ -295,7 +300,7 @@ func (i *instance) haproxyUpdate(timer *utils.Timer) {
 			return
 		}
 	}
-	if updated {
+	if updated && !brownout.NeedsReload() {
 		if updater.cmdCnt > 0 {
 			if i.options.ValidateConfig {
 				var err error
