@@ -96,31 +96,34 @@ func (c *PIDController) NeedsReload() bool {
 	return c.needsReload
 }
 
-func (c *PIDController) execApplyACL(backend *hatypes.Backend, adjustment float64) bool {
+func (c *PIDController) execApplyACL(backend *hatypes.Backend, adjustment int) bool {
 	nonEssentialPaths := c.targets[backend.Name].Paths
 
-	if len(nonEssentialPaths) < len(c.disabledPaths[backend.Name]) {
-		c.logger.Warn("no more paths to disable for %q", backend.Name)
-		return false
-	}
 	c.logger.InfoV(2, "There are still some paths that can be disabled for %q", backend.Name)
 
-	if adjustment > 0 {
+	if adjustment > 501 {
 		for _, path := range nonEssentialPaths {
 			if _, found := c.disabledPaths[backend.Name][path]; !found {
-				c.logger.InfoV(2, "Disabling the path: %q for backend %q", path, backend.Name)
+				c.logger.InfoV(2, "Setting the rate %d for path %q on %q", adjustment, path, backend.Name)
 				c.addRateLimitToConfig(path, adjustment)
 				return true
 			}
+		}
+	}
+	if adjustment < 501 {
+		for path := range c.disabledPaths[backend.Name] {
+			c.logger.InfoV(2, "Setting the rate %d for path %q on %q", adjustment, path, backend.Name)
+			c.addRateLimitToConfig(path, adjustment)
+			return true
 		}
 	}
 	return false
 }
 
 // Given the current error, returns the necessary adjustment for brownout ACL and rate limiting
-func (c *PIDController) getAdjustment(backend string, stats map[string]string) float64 {
+func (c *PIDController) getAdjustment(backend string, stats map[string]string) int {
 	// The PID controller
-	var response float64 = 0
+	response := 0
 
 	c.logger.InfoV(2, "Targets for backend are: %v", c.targets[backend].Targets)
 	c.logger.InfoV(2, "About to go into the loop for %d iterations", len(c.targets[backend].Targets))
@@ -148,7 +151,10 @@ func (c *PIDController) getAdjustment(backend string, stats map[string]string) f
 			}
 		}
 	}
-	c.logger.InfoV(2, "Calculated response to be %f", response)
+	c.logger.InfoV(2, "Response before conversion %d", response)
+	// f_c(i) = 500(1 - i) + 1-> max control response gives us the limit of 0.1/s, min = 100/s
+	response = (1-response)*500 + 1
+	c.logger.InfoV(2, "Calculated response to be %d", response)
 
 	return response
 }
@@ -209,6 +215,6 @@ func (c *PIDController) recordResponseTime(backend string, stats map[string]stri
 }
 
 // Adds Rate Limiting ACL to the config, enforcing brownout at the LB level
-func (c *PIDController) addRateLimitToConfig(path string, rate float64) {
-	c.currConfig.brownout.Rates[path] = int(rate * 100)
+func (c *PIDController) addRateLimitToConfig(path string, rate int) {
+	c.currConfig.brownout.Rates[path] = rate
 }

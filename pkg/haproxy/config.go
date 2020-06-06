@@ -75,9 +75,12 @@ func createConfig(options options) *config {
 		mapsTemplate = template.CreateConfig()
 	}
 	return &config{
-		acmeData:     &hatypes.AcmeData{},
-		acme:         &hatypes.Acme{},
-		brownout:     &hatypes.Brownout{ACLMapPath: options.mapsDir + "/_brownout_rates.map"},
+		acmeData: &hatypes.AcmeData{},
+		acme:     &hatypes.Acme{},
+		brownout: &hatypes.Brownout{
+			ACLMapPath: options.mapsDir + "/_brownout_rates.map",
+			Rates:      make(map[string]int),
+		},
 		global:       &hatypes.Global{},
 		frontend:     &hatypes.Frontend{Name: "_front001"},
 		hosts:        hatypes.CreateHosts(),
