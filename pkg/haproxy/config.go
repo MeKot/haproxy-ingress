@@ -18,6 +18,7 @@ package haproxy
 
 import (
 	"fmt"
+	"github.com/golang/glog"
 	"reflect"
 	"sort"
 
@@ -356,9 +357,12 @@ func (c *config) WriteBackendMaps() error {
 // Updates the ACL maps used by HAProxy to rate-limit incoming requests and implement brownout
 // Must be called before reloading the proxy, can be called after main config write
 func (c *config) WriteBrownoutMaps() error {
+	glog.Info(fmt.Sprintf("Writing the brownout maps from config %p rates %p", c, &c.brownout.Rates))
 	mapBuilder := hatypes.CreateMaps()
 	limitsMap := mapBuilder.AddMap(c.mapsDir + "/_brownout_rates.map")
+	glog.Info(fmt.Sprintf("Rates are: %+v", c.brownout.Rates))
 	for path, limit := range c.brownout.Rates {
+		glog.Info(fmt.Sprintf("Adding %q to the map with rate %d", path, limit))
 		limitsMap.AppendPath(path, fmt.Sprintf("%d", limit))
 	}
 	return writeMaps(mapBuilder, c.mapsTemplate)

@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
-	"strconv"
 	"time"
 
 	hatypes "github.com/jcmoraisjr/haproxy-ingress/pkg/haproxy/types"
@@ -29,14 +28,13 @@ import (
 )
 
 type dynUpdater struct {
-	logger   types.Logger
-	old      *config
-	cur      *config
-	socket   string
-	cmd      func(socket string, observer func(duration time.Duration), commands ...string) ([]string, error)
-	cmdCnt   int
-	metrics  types.Metrics
-	brownout Controller
+	logger  types.Logger
+	old     *config
+	cur     *config
+	socket  string
+	cmd     func(socket string, observer func(duration time.Duration), commands ...string) ([]string, error)
+	cmdCnt  int
+	metrics types.Metrics
 }
 
 type backendPair struct {
@@ -49,7 +47,7 @@ type epPair struct {
 	cur *hatypes.Endpoint
 }
 
-func (i *instance) newDynUpdater(brownout Controller) *dynUpdater {
+func (i *instance) newDynUpdater() *dynUpdater {
 	var old, cur *config
 	if i.oldConfig != nil {
 		old = i.oldConfig.(*config)
@@ -58,13 +56,12 @@ func (i *instance) newDynUpdater(brownout Controller) *dynUpdater {
 		cur = i.curConfig.(*config)
 	}
 	return &dynUpdater{
-		logger:   i.logger,
-		old:      old,
-		cur:      cur,
-		socket:   i.curConfig.Global().AdminSocket,
-		cmd:      utils.HAProxyCommand,
-		metrics:  i.metrics,
-		brownout: brownout,
+		logger:  i.logger,
+		old:     old,
+		cur:     cur,
+		socket:  i.curConfig.Global().AdminSocket,
+		cmd:     utils.HAProxyCommand,
+		metrics: i.metrics,
 	}
 }
 
@@ -129,7 +126,6 @@ func (d *dynUpdater) checkConfigPair() bool {
 	// false if cannot be dynamically updated or update failed
 	for _, pair := range backends {
 		// Run brownout on the backends
-		d.brownout.Update(pair.cur)
 		if !d.checkBackendPair(pair) {
 			return false
 		}
@@ -255,7 +251,6 @@ func (d *dynUpdater) alignSlots() {
 		return
 	}
 	for _, back := range d.cur.Backends().Items() {
-		d.brownout.Update(back)
 		if !back.Dynamic.DynUpdate {
 			// no need to add empty slots if won't dynamically update
 			continue
@@ -311,26 +306,28 @@ func (d *dynUpdater) execDisableEndpoint(backname string, ep *hatypes.Endpoint) 
 }
 
 func (d *dynUpdater) execEnableEndpoint(backname string, oldEP, curEP *hatypes.Endpoint) bool {
-	state := map[bool]string{true: "ready", false: "drain"}[curEP.Weight > 0]
-	d.logger.InfoV(2, "Enabling the server: %q / %q into the %q state", backname, curEP.Name, state)
-	server := fmt.Sprintf("set server %s/%s ", backname, curEP.Name)
-	cmd := []string{
-		server + "addr " + curEP.IP + " port " + strconv.Itoa(curEP.Port),
-		server + "state " + state,
-		server + "weight " + strconv.Itoa(curEP.Weight),
-	}
-	msg, err := d.execCommand(d.metrics.HAProxySetServerResponseTime, cmd)
-	if err != nil {
-		d.logger.Error("error adding/updating endpoint %s/%s: %v", backname, curEP.Name, err)
-		return false
-	}
-	event := map[bool]string{true: "updated", false: "added"}[oldEP != nil]
-	d.logger.InfoV(2, "%s endpoint '%s' weight '%d' state '%s' on backend/server '%s/%s'",
-		event, curEP.Target, curEP.Weight, state, backname, curEP.Name)
-	for _, m := range msg {
-		d.logger.InfoV(2, m)
-	}
-	return true
+	// This forces servers that are under heavy load into drain state, which is not the behaviour we want
+	//state := map[bool]string{true: "ready", false: "drain"}[curEP.Weight > 0]
+	////d.logger.InfoV(2, "Enabling the server: %q / %q into the %q state", backname, curEP.Name, state)
+	//server := fmt.Sprintf("set server %s/%s ", backname, curEP.Name)
+	//cmd := []string{
+	//	server + "addr " + curEP.IP + " port " + strconv.Itoa(curEP.Port),
+	//	server + "state " + state,
+	//	server + "weight " + strconv.Itoa(curEP.Weight),
+	//}
+	//msg, err := d.execCommand(d.metrics.HAProxySetServerResponseTime, cmd)
+	//if err != nil {
+	//	d.logger.Error("error adding/updating endpoint %s/%s: %v", backname, curEP.Name, err)
+	//	return false
+	//}
+	//event := map[bool]string{true: "updated", false: "added"}[oldEP != nil]
+	//d.logger.InfoV(2, "%s endpoint '%s' weight '%d' state '%s' on backend/server '%s/%s'",
+	//	event, curEP.Target, curEP.Weight, state, backname, curEP.Name)
+	//for _, m := range msg {
+	//	d.logger.InfoV(2, m)
+	//}
+	//return true
+	return false
 }
 
 func (d *dynUpdater) execCommand(observer func(duration time.Duration), cmd []string) ([]string, error) {

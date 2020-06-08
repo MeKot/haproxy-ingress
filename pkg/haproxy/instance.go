@@ -54,6 +54,7 @@ type Instance interface {
 	Config() Config
 	CalcIdleMetric()
 	Update(timer *utils.Timer)
+	RunBrownout() bool
 }
 
 // CreateInstance ...
@@ -77,6 +78,7 @@ type instance struct {
 	oldConfig    Config
 	curConfig    Config
 	metrics      types.Metrics
+	brownout     Controller
 }
 
 func (i *instance) AcmeCheck(source string) (int, error) {
@@ -207,7 +209,25 @@ func (i *instance) CalcIdleMetric() {
 	i.metrics.AddIdleFactor(idle)
 }
 
+func (i *instance) RunBrownout() bool {
+	if i.oldConfig == nil {
+		i.logger.Info("Current config is uninitialised, skipping")
+		return false
+	}
+
+	if i.brownout == nil {
+		i.logger.Info("Brownout is not yet initialised, skipping")
+		return false
+	}
+
+	for _, back := range i.oldConfig.Backends().Items() {
+		i.brownout.Update(back)
+	}
+	return i.brownout.NeedsReload()
+}
+
 func (i *instance) Update(timer *utils.Timer) {
+	i.brownout = i.GetController(PID)
 	i.acmeUpdate()
 	i.haproxyUpdate(timer)
 }
@@ -280,10 +300,9 @@ func (i *instance) haproxyUpdate(timer *utils.Timer) {
 		i.metrics.IncUpdateNoop()
 		return
 	}
-	brownout := i.GetController(PID)
-	updater := i.newDynUpdater(brownout)
+	updater := i.newDynUpdater()
 	updated := updater.update()
-	if !updated || updater.cmdCnt > 0 || brownout.NeedsReload() {
+	if !updated || updater.cmdCnt > 0 || i.brownout.NeedsReload() {
 		// only need to rewrite config files if:
 		//   - brownout.NeedsReload() - the brownout maps have changed, need to restart the proxy to reload them
 		//   - !updated           - there are changes that cannot be dynamically applied
@@ -300,7 +319,7 @@ func (i *instance) haproxyUpdate(timer *utils.Timer) {
 			return
 		}
 	}
-	if updated && !brownout.NeedsReload() {
+	if updated && !i.brownout.NeedsReload() {
 		if updater.cmdCnt > 0 {
 			if i.options.ValidateConfig {
 				var err error
@@ -325,6 +344,8 @@ func (i *instance) haproxyUpdate(timer *utils.Timer) {
 		i.metrics.UpdateSuccessful(false)
 		return
 	}
+	// HAProxy has been reloaded, we can reset
+	i.brownout.Reset()
 	timer.Tick("reload_haproxy")
 	i.metrics.UpdateSuccessful(true)
 	i.logger.Info("HAProxy successfully reloaded")

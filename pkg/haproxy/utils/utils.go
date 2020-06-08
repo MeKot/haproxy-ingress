@@ -18,7 +18,6 @@ package utils
 
 import (
 	"fmt"
-	"github.com/golang/glog"
 	"net"
 	"time"
 )
@@ -61,7 +60,6 @@ func HAProxyCommandWithReturn(socket string, observer func(duration time.Duratio
 		}
 		defer c.Close()
 		cmd = cmd + "\n"
-		glog.Info("The command sent to the socket is: ", cmd)
 		if sent, err := c.Write([]byte(cmd)); err != nil {
 			return msg, fmt.Errorf("error sending to unix socket %s: %v", socket, err)
 		} else if sent != len(cmd) {

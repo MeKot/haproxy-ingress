@@ -23,6 +23,7 @@ const (
 type Controller interface {
 	Update(backend *hatypes.Backend)
 	NeedsReload() bool
+	Reset()
 }
 
 type TargetConfig struct {
@@ -36,25 +37,37 @@ type BrownoutConfig struct {
 
 func (i *instance) GetController(t ControllerType) Controller {
 	var c BrownoutConfig
-	logger := i.logger
-	logger.InfoV(2, "Trying to parse the config, which is: %q", i.curConfig.Brownout().Rules)
+	i.logger.InfoV(2, "Trying to parse the config, which is: %q", i.curConfig.Brownout().Rules)
 	_ = json.Unmarshal([]byte(i.curConfig.Brownout().Rules), &c)
-	logger.InfoV(2, "The config was parsed:\n")
-	logger.InfoV(2, "%d configurations parsed\n", len(c.Targets))
-	for key, value := range c.Targets {
-		logger.InfoV(2, "%q : %+v\n\n", key, value)
+	i.logger.InfoV(2, "%d configurations parsed\n", len(c.Targets))
+
+	i.logger.Info("The map in config %p has the address of %p", &i.curConfig, &i.curConfig.Brownout().Rates)
+
+	for _, value := range c.Targets {
+		i.logger.Info("Initialising the global rates map")
+		// Default rate limit is 1001 requests per 10s (or 100/s)
+		for _, path := range value.Paths {
+			r, ok := i.curConfig.Brownout().Rates[path]
+			if !ok {
+				i.logger.Info("Adding %q", path)
+				i.curConfig.Brownout().Rates[path] = 1001
+				continue
+			}
+			i.logger.Info("Found %q with set rate %d", path, r)
+		}
 	}
 	switch t {
 	case PID:
 		return &PIDController{
-			needsReload:   false,
-			logger:        logger,
-			targets:       c.Targets,
-			disabledPaths: nil,
-			cmd:           utils.HAProxyCommandWithReturn,
-			socket:        i.curConfig.Global().AdminSocket,
-			metrics:       i.metrics,
-			currConfig:    i.curConfig.(*config),
+			needsReload:    false,
+			logger:         i.logger,
+			lastUpdate:     time.Now(),
+			reloadInterval: time.Second,
+			targets:        c.Targets,
+			cmd:            utils.HAProxyCommandWithReturn,
+			socket:         i.curConfig.Global().AdminSocket,
+			metrics:        i.metrics,
+			currConfig:     i.curConfig.(*config),
 		}
 	case SimpleML:
 		return nil
@@ -64,60 +77,57 @@ func (i *instance) GetController(t ControllerType) Controller {
 
 // PIDController used to perform runtime updates
 type PIDController struct {
-	needsReload   bool
-	logger        types.Logger
-	targets       map[string]TargetConfig
-	disabledPaths map[string]map[string]float32
-	cmd           func(socket string, observer func(duration time.Duration), commands ...string) ([]string, error)
-	socket        string
-	metrics       types.Metrics
-	currConfig    *config
+	reloadInterval time.Duration
+	lastUpdate     time.Time
+	needsReload    bool
+	logger         types.Logger
+	targets        map[string]TargetConfig
+	cmd            func(socket string, observer func(duration time.Duration), commands ...string) ([]string, error)
+	socket         string
+	metrics        types.Metrics
+	currConfig     *config
 }
 
 // Coordinates metric collection and updates the config with any necessary action
 func (c *PIDController) Update(backend *hatypes.Backend) {
-	c.logger.InfoV(2, "The backend has the ID of: %q", backend.ID)
-	c.logger.InfoV(2, "Current config is:")
-	c.logger.InfoV(2, "%+v", c.targets)
-
 	stats, err := c.readStats(backend.ID)
 	if err != nil {
 		c.logger.Error(err.Error())
 		return
 	}
-
 	// Have to use ID here, as prometheus only exports backend IDs
 	c.recordResponseTime(backend.ID, stats)
 
-	c.needsReload = c.execApplyACL(backend, c.getAdjustment(backend.Name, stats))
+	if c.lastUpdate.Add(c.reloadInterval).After(time.Now()) {
+		c.logger.Info("Waiting before next update")
+		return
+	}
+
+	c.execApplyACL(backend, c.getAdjustment(backend.Name, stats))
+	if c.needsReload {
+		c.logger.InfoV(2, "HAProxy will need to reload because of brownout")
+	}
+	c.lastUpdate = time.Now()
 }
 
 func (c *PIDController) NeedsReload() bool {
 	return c.needsReload
 }
 
-func (c *PIDController) execApplyACL(backend *hatypes.Backend, adjustment int) bool {
-	nonEssentialPaths := c.targets[backend.Name].Paths
+func (c *PIDController) Reset() {
+	c.needsReload = false
+}
 
-	c.logger.InfoV(2, "There are still some paths that can be disabled for %q", backend.Name)
-
-	if adjustment > 501 {
-		for _, path := range nonEssentialPaths {
-			if _, found := c.disabledPaths[backend.Name][path]; !found {
-				c.logger.InfoV(2, "Setting the rate %d for path %q on %q", adjustment, path, backend.Name)
+func (c *PIDController) execApplyACL(backend *hatypes.Backend, adjustment int) {
+	for path := range c.currConfig.brownout.Rates {
+		for _, p := range c.targets[backend.Name].Paths {
+			if p == path {
+				c.logger.Info("Applying ACL for backend %q on path %q", backend.ID, path)
 				c.addRateLimitToConfig(path, adjustment)
-				return true
 			}
 		}
+
 	}
-	if adjustment < 501 {
-		for path := range c.disabledPaths[backend.Name] {
-			c.logger.InfoV(2, "Setting the rate %d for path %q on %q", adjustment, path, backend.Name)
-			c.addRateLimitToConfig(path, adjustment)
-			return true
-		}
-	}
-	return false
 }
 
 // Given the current error, returns the necessary adjustment for brownout ACL and rate limiting
@@ -178,14 +188,14 @@ func (c *PIDController) readStats(id string) (map[string]string, error) {
 		c.logger.Error("Failed to parse the keys")
 		return map[string]string{}, err
 	}
-	c.logger.InfoV(2, "Read %d keys from the csv", len(keys))
+	//c.logger.InfoV(2, "Read %d keys from the csv", len(keys))
 
 	values, err := r.Read()
 	if err != nil {
 		c.logger.Error("Failed to parse the values")
 		return map[string]string{}, err
 	}
-	c.logger.InfoV(2, "Read %d values from the csv", len(values))
+	//c.logger.InfoV(2, "Read %d values from the csv", len(values))
 
 	if len(values) != len(keys) {
 		return map[string]string{}, errors.New("number of keys does not match the number of values")
@@ -216,5 +226,12 @@ func (c *PIDController) recordResponseTime(backend string, stats map[string]stri
 
 // Adds Rate Limiting ACL to the config, enforcing brownout at the LB level
 func (c *PIDController) addRateLimitToConfig(path string, rate int) {
-	c.currConfig.brownout.Rates[path] = rate
+	curr := c.currConfig.brownout.Rates[path]
+	if curr != rate {
+		c.logger.InfoV(2, "Updated the path %q from %d to %d in the rates map %p", path, curr, rate,
+			&c.currConfig.brownout.Rates)
+		c.currConfig.brownout.Rates[path] = rate
+		c.metrics.SetBrownOutFeatureStatus(path, float64(rate))
+		c.needsReload = true
+	}
 }

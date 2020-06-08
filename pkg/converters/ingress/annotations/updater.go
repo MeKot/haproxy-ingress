@@ -187,8 +187,6 @@ func (c *updater) UpdateBackendConfig(backend *hatypes.Backend, mapper *Mapper) 
 }
 
 func (c *updater) buildGlobalBrownoutTargets(d *globalData, mapper *Mapper) {
-	c.logger.InfoV(2, "Activating Brownout")
 	d.brownout.Enabled = true
-	c.logger.InfoV(2, "Setting brownout rules to be %q", mapper.Get(ingtypes.BrownoutTargets).String())
 	d.brownout.Rules = mapper.Get(ingtypes.BrownoutTargets).String()
 }

@@ -718,7 +718,7 @@ frontend _front_http
     # Parameterise the default rate limit?
     http-request set-var(req.rate_limit) path,map_beg({{$cfg.Brownout.ACLMapPath}},1000)
 
-    # Parameterise this?
+    # Parameterise cookie name?
     http-request track-sc0 cook(JSESSIONID)
 
     http-request set-var(req.request_rate)  cook(JSESSIONID),table_http_req_rate()

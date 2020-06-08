@@ -120,7 +120,7 @@ func createMetrics(bucketsResponseTime []float64) *metrics {
 				Name:      "backend_feature_status",
 				Help:      "Feature status per backend (0 - 1), used to rate limit",
 			},
-			[]string{"backend", "feature"},
+			[]string{"feature"},
 		),
 	}
 	prometheus.MustRegister(metrics.responseTime)
@@ -197,8 +197,8 @@ func (m *metrics) IncCertSigningOutdated(domains string, success bool) {
 	m.certSigningCounter.WithLabelValues(domains, "outdated", strconv.FormatBool(success)).Inc()
 }
 
-func (m *metrics) SetBrownOutFeatureStatus(backend string, feature string, currentValue float64) {
-	m.backendFeaturesDisabled.WithLabelValues(backend, feature).Set(currentValue)
+func (m *metrics) SetBrownOutFeatureStatus(feature string, currentValue float64) {
+	m.backendFeaturesDisabled.WithLabelValues(feature).Set(currentValue)
 }
 
 func (m *metrics) SetBackendResponseTime(backend string, duration time.Duration) {

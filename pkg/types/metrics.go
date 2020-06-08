@@ -36,6 +36,6 @@ type Metrics interface {
 	IncCertSigningOutdated(domains string, success bool)
 
 	// Brownout-specific metrics
-	SetBrownOutFeatureStatus(backend string, feature string, currentValue float64)
+	SetBrownOutFeatureStatus(feature string, currentValue float64)
 	SetBackendResponseTime(backend string, duration time.Duration)
 }
