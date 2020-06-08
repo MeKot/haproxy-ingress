@@ -62,7 +62,7 @@ func (i *instance) GetController(t ControllerType) Controller {
 			needsReload:    false,
 			logger:         i.logger,
 			lastUpdate:     time.Now(),
-			reloadInterval: time.Second,
+			reloadInterval: time.Second * 10,
 			targets:        c.Targets,
 			cmd:            utils.HAProxyCommandWithReturn,
 			socket:         i.curConfig.Global().AdminSocket,
@@ -99,7 +99,7 @@ func (c *PIDController) Update(backend *hatypes.Backend) {
 	c.recordResponseTime(backend.ID, stats)
 
 	if c.lastUpdate.Add(c.reloadInterval).After(time.Now()) {
-		c.logger.Info("Waiting before next update")
+		//c.logger.Info("Waiting before next update")
 		return
 	}
 
@@ -122,7 +122,6 @@ func (c *PIDController) execApplyACL(backend *hatypes.Backend, adjustment int) {
 	for path := range c.currConfig.brownout.Rates {
 		for _, p := range c.targets[backend.Name].Paths {
 			if p == path {
-				c.logger.Info("Applying ACL for backend %q on path %q", backend.ID, path)
 				c.addRateLimitToConfig(path, adjustment)
 			}
 		}
@@ -135,8 +134,8 @@ func (c *PIDController) getAdjustment(backend string, stats map[string]string) i
 	// The PID controller
 	response := 0
 
-	c.logger.InfoV(2, "Targets for backend are: %v", c.targets[backend].Targets)
-	c.logger.InfoV(2, "About to go into the loop for %d iterations", len(c.targets[backend].Targets))
+	//c.logger.InfoV(2, "Targets for backend are: %v", c.targets[backend].Targets)
+	//c.logger.InfoV(2, "About to go into the loop for %d iterations", len(c.targets[backend].Targets))
 	for metric, target := range c.targets[backend].Targets {
 		c.logger.InfoV(2, "Found a target for %q, which is %d", metric, target)
 		if current, ok := stats[metric]; ok {
@@ -150,12 +149,10 @@ func (c *PIDController) getAdjustment(backend string, stats map[string]string) i
 			c.logger.InfoV(2, "Parsed the value to %d", cur)
 
 			if cur < target {
-				c.logger.InfoV(2, "Decrementing response")
 				response--
 				continue
 			}
 			if cur > target {
-				c.logger.InfoV(2, "Incrementing response")
 				response++
 				continue
 			}
