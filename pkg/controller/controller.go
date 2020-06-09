@@ -166,9 +166,10 @@ func (hc *HAProxyController) startServices() {
 	if hc.cfg.StatsCollectProcPeriod.Milliseconds() > 0 {
 		go wait.Until(func() {
 			hc.instance.CalcIdleMetric()
-			if hc.instance.RunBrownout() {
-				hc.Notify()
-			}
+			hc.instance.RunBrownout()
+			//if hc.instance.RunBrownout() {
+			//	hc.Notify()
+			//}
 		}, hc.cfg.StatsCollectProcPeriod, hc.stopCh)
 	}
 	if hc.leaderelector != nil {

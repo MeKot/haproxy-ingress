@@ -137,16 +137,16 @@ func (c *PIDController) getAdjustment(backend string, stats map[string]string) i
 	//c.logger.InfoV(2, "Targets for backend are: %v", c.targets[backend].Targets)
 	//c.logger.InfoV(2, "About to go into the loop for %d iterations", len(c.targets[backend].Targets))
 	for metric, target := range c.targets[backend].Targets {
-		c.logger.InfoV(2, "Found a target for %q, which is %d", metric, target)
+		//c.logger.InfoV(2, "Found a target for %q, which is %d", metric, target)
 		if current, ok := stats[metric]; ok {
-			c.logger.InfoV(2, "Stats have the metric with value %q", current)
+			//c.logger.InfoV(2, "Stats have the metric with value %q", current)
 			cur, err := strconv.ParseInt(current, 10, 64)
 			if err != nil {
 				c.logger.Error("Failed to parse an int from %q", current)
 				continue
 			}
 
-			c.logger.InfoV(2, "Parsed the value to %d", cur)
+			//c.logger.InfoV(2, "Parsed the value to %d", cur)
 
 			if cur < target {
 				response--
@@ -158,10 +158,10 @@ func (c *PIDController) getAdjustment(backend string, stats map[string]string) i
 			}
 		}
 	}
-	c.logger.InfoV(2, "Response before conversion %d", response)
+	//c.logger.InfoV(2, "Response before conversion %d", response)
 	// f_c(i) = 500(1 - i) + 1-> max control response gives us the limit of 0.1/s, min = 100/s
 	response = (1-response)*500 + 1
-	c.logger.InfoV(2, "Calculated response to be %d", response)
+	//c.logger.InfoV(2, "Calculated response to be %d", response)
 
 	return response
 }
