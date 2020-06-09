@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	controller2 "github.com/jcmoraisjr/haproxy-ingress/pkg/controller"
 	hatypes "github.com/jcmoraisjr/haproxy-ingress/pkg/haproxy/types"
 	"github.com/jcmoraisjr/haproxy-ingress/pkg/haproxy/utils"
 	"github.com/jcmoraisjr/haproxy-ingress/pkg/types"
@@ -16,8 +17,7 @@ import (
 type ControllerType string
 
 const (
-	PID      ControllerType = "PIDController"
-	SimpleML ControllerType = "Simple ML"
+	PID ControllerType = "PID"
 )
 
 type Controller interface {
@@ -56,27 +56,30 @@ func (i *instance) GetController(t ControllerType) Controller {
 			i.logger.Info("Found %q with set rate %d", path, r)
 		}
 	}
+	out := &controller{
+		needsReload:    false,
+		logger:         i.logger,
+		lastUpdate:     time.Now(),
+		reloadInterval: time.Second * 10,
+		targets:        c.Targets,
+		cmd:            utils.HAProxyCommandWithReturn,
+		socket:         i.curConfig.Global().AdminSocket,
+		metrics:        i.metrics,
+		currConfig:     i.curConfig.(*config),
+	}
 	switch t {
 	case PID:
-		return &PIDController{
-			needsReload:    false,
-			logger:         i.logger,
-			lastUpdate:     time.Now(),
-			reloadInterval: time.Second * 10,
-			targets:        c.Targets,
-			cmd:            utils.HAProxyCommandWithReturn,
-			socket:         i.curConfig.Global().AdminSocket,
-			metrics:        i.metrics,
-			currConfig:     i.curConfig.(*config),
+		out.control = &controller2.PIDController{
+			MaxOut: 1000,
+			MinOut: 0,
 		}
-	case SimpleML:
-		return nil
+		return out
 	}
 	return nil
 }
 
-// PIDController used to perform runtime updates
-type PIDController struct {
+// controller used to perform runtime updates
+type controller struct {
 	reloadInterval time.Duration
 	lastUpdate     time.Time
 	needsReload    bool
@@ -86,10 +89,11 @@ type PIDController struct {
 	socket         string
 	metrics        types.Metrics
 	currConfig     *config
+	control        controller2.Controller
 }
 
 // Coordinates metric collection and updates the config with any necessary action
-func (c *PIDController) Update(backend *hatypes.Backend) {
+func (c *controller) Update(backend *hatypes.Backend) {
 	stats, err := c.readStats(backend.ID)
 	if err != nil {
 		c.logger.Error(err.Error())
@@ -110,27 +114,26 @@ func (c *PIDController) Update(backend *hatypes.Backend) {
 	c.lastUpdate = time.Now()
 }
 
-func (c *PIDController) NeedsReload() bool {
+func (c *controller) NeedsReload() bool {
 	return c.needsReload
 }
 
-func (c *PIDController) Reset() {
+func (c *controller) Reset() {
 	c.needsReload = false
 }
 
-func (c *PIDController) execApplyACL(backend *hatypes.Backend, adjustment int) {
+func (c *controller) execApplyACL(backend *hatypes.Backend, adjustment int) {
 	for path := range c.currConfig.brownout.Rates {
 		for _, p := range c.targets[backend.Name].Paths {
 			if p == path {
 				c.addRateLimitToConfig(path, adjustment)
 			}
 		}
-
 	}
 }
 
 // Given the current error, returns the necessary adjustment for brownout ACL and rate limiting
-func (c *PIDController) getAdjustment(backend string, stats map[string]string) int {
+func (c *controller) getAdjustment(backend string, stats map[string]string) int {
 	// The PID controller
 	response := 0
 
@@ -140,34 +143,22 @@ func (c *PIDController) getAdjustment(backend string, stats map[string]string) i
 		//c.logger.InfoV(2, "Found a target for %q, which is %d", metric, target)
 		if current, ok := stats[metric]; ok {
 			//c.logger.InfoV(2, "Stats have the metric with value %q", current)
-			cur, err := strconv.ParseInt(current, 10, 64)
+			cur, err := strconv.ParseFloat(current, 64)
 			if err != nil {
 				c.logger.Error("Failed to parse an int from %q", current)
 				continue
 			}
-
-			//c.logger.InfoV(2, "Parsed the value to %d", cur)
-
-			if cur < target {
-				response--
-				continue
-			}
-			if cur > target {
-				response++
-				continue
-			}
+			// This is ok, as we only have one variable we control
+			// If extended to multivariable control, this needs to be rewritten
+			// Casting to int, as this directly corresponds to the rate for all non-essential endpoints
+			response = int(c.control.Next(cur, time.Now().Sub(c.lastUpdate)))
 		}
 	}
-	//c.logger.InfoV(2, "Response before conversion %d", response)
-	// f_c(i) = 500(1 - i) + 1-> max control response gives us the limit of 0.1/s, min = 100/s
-	response = (1-response)*500 + 1
-	//c.logger.InfoV(2, "Calculated response to be %d", response)
-
 	return response
 }
 
 // Sends the stats query to HAProxy for a given backend and returns a map of key-value stats
-func (c *PIDController) readStats(id string) (map[string]string, error) {
+func (c *controller) readStats(id string) (map[string]string, error) {
 	cmd := fmt.Sprintf("show stat %s 2 -1", id)
 	msg, err := c.cmd(c.socket, c.metrics.HAProxySetServerResponseTime, cmd)
 	if err != nil {
@@ -205,7 +196,7 @@ func (c *PIDController) readStats(id string) (map[string]string, error) {
 	return m, nil
 }
 
-func (c *PIDController) recordResponseTime(backend string, stats map[string]string) {
+func (c *controller) recordResponseTime(backend string, stats map[string]string) {
 	curr, ok := stats["rtime"]
 	if !ok {
 		c.logger.Error("rtime was not returned by HAProxy")
@@ -222,13 +213,13 @@ func (c *PIDController) recordResponseTime(backend string, stats map[string]stri
 }
 
 // Adds Rate Limiting ACL to the config, enforcing brownout at the LB level
-func (c *PIDController) addRateLimitToConfig(path string, rate int) {
+func (c *controller) addRateLimitToConfig(path string, rate int) {
 	curr := c.currConfig.brownout.Rates[path]
 	if curr != rate {
 		c.logger.InfoV(2, "Updated the path %q from %d to %d in the rates map %p", path, curr, rate,
 			&c.currConfig.brownout.Rates)
 		c.currConfig.brownout.Rates[path] = rate
-		c.metrics.SetBrownOutFeatureStatus(path, float64(rate))
 		c.needsReload = true
 	}
+	c.metrics.SetBrownOutFeatureStatus(path, float64(rate))
 }
