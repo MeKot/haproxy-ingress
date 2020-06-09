@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	controller2 "github.com/jcmoraisjr/haproxy-ingress/pkg/controller"
+	"github.com/jcmoraisjr/haproxy-ingress/pkg/brownout"
 	hatypes "github.com/jcmoraisjr/haproxy-ingress/pkg/haproxy/types"
 	"github.com/jcmoraisjr/haproxy-ingress/pkg/haproxy/utils"
 	"github.com/jcmoraisjr/haproxy-ingress/pkg/types"
@@ -50,7 +50,7 @@ func (i *instance) GetController(t ControllerType) Controller {
 			r, ok := i.curConfig.Brownout().Rates[path]
 			if !ok {
 				i.logger.Info("Adding %q", path)
-				i.curConfig.Brownout().Rates[path] = 1001
+				i.curConfig.Brownout().Rates[path] = 1000
 				continue
 			}
 			i.logger.Info("Found %q with set rate %d", path, r)
@@ -69,9 +69,10 @@ func (i *instance) GetController(t ControllerType) Controller {
 	}
 	switch t {
 	case PID:
-		out.control = &controller2.PIDController{
+		out.control = &brownout.PIDController{
 			MaxOut: 1000,
 			MinOut: 0,
+			P:      5,
 		}
 		return out
 	}
@@ -89,7 +90,7 @@ type controller struct {
 	socket         string
 	metrics        types.Metrics
 	currConfig     *config
-	control        controller2.Controller
+	control        brownout.Controller
 }
 
 // Coordinates metric collection and updates the config with any necessary action
@@ -151,6 +152,7 @@ func (c *controller) getAdjustment(backend string, stats map[string]string) int 
 			// This is ok, as we only have one variable we control
 			// If extended to multivariable control, this needs to be rewritten
 			// Casting to int, as this directly corresponds to the rate for all non-essential endpoints
+			c.control.SetTarget(float64(target))
 			response = int(c.control.Next(cur, time.Now().Sub(c.lastUpdate)))
 		}
 	}

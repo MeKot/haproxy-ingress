@@ -1,4 +1,4 @@
-package controller
+package brownout
 
 import (
 	"github.com/golang/glog"
@@ -7,6 +7,7 @@ import (
 
 type Controller interface {
 	Next(current float64, lastUpdate time.Duration) float64
+	SetTarget(newTaget float64)
 }
 
 type PIDController struct {
@@ -37,9 +38,9 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 		derSum = (e - (c.Target - c.Previous)) / dt
 	}
 	c.Previous = current
-	out := c.P*e + c.IntegralSum + c.D*derSum
+	out := c.P*e + c.IntegralSum + c.D*derSum + 1000
 
-	if c.IntegralSum > c.MaxOut {
+	if out > c.MaxOut {
 		glog.Info("Result is capped")
 		return c.MaxOut
 	} else if c.IntegralSum < c.MinOut {
@@ -47,4 +48,8 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 		return c.MinOut
 	}
 	return out
+}
+
+func (c *PIDController) SetTarget(newTarget float64) {
+	c.Target = newTarget
 }
