@@ -612,11 +612,9 @@ backend _error404
  # #
  #     Brownout backend
  #
-  backend brownout_backend
-  mode http
-  timeout tarpit 1s
-  errorfile 429 /etc/haproxy/default_resp/overloaded.http
-  http-request tarpit
+backend brownout_backend
+    mode http
+    errorfile 503 /etc/haproxy/default_resp/overloaded.http
 
 {{- if $fmaps }}
 
@@ -713,18 +711,23 @@ frontend _front_http
 
 {{- /*------------------------------------*/}}
 {{- if $cfg.Brownout.Enabled }}
-    stick-table  type string  len 32  size 100k  expire 10s  store http_req_rate(10s)
-
-    # Parameterise the default rate limit?
-    http-request set-var(req.rate_limit) path,map_beg({{$cfg.Brownout.ACLMapPath}},1000)
+    stick-table  type string  len 45  size 100k  expire 3m  store http_req_rate(3m)
 
     # Parameterise cookie name?
     http-request track-sc0 cook(JSESSIONID)
+
+    # Parameterise the default rate limit?
+    http-request set-var(req.rate_limit) path,map_beg({{$cfg.Brownout.ACLMapPath}},100000)
 
     http-request set-var(req.request_rate)  cook(JSESSIONID),table_http_req_rate()
 
     # Perform the ACL action
     acl brownout_rate_limiting var(req.rate_limit),sub(req.request_rate) lt 0
+
+    http-request set-var(req.acl_match) str("ACL Match") if brownout_rate_limiting
+    http-request capture var(req.acl_match) len 10
+
+    use_backend brownout_backend if brownout_rate_limiting
 
 {{- end }}
 
@@ -842,7 +845,6 @@ frontend _front_http
 
 {{- /*------------------------------------*/}}
 {{- if $cfg.Brownout.Enabled }}
-    use_backend brownout_backend if brownout_rate_limiting
 {{end}}
 {{- if $acmeexclusive }}
     use_backend _acme_challenge if acme-challenge

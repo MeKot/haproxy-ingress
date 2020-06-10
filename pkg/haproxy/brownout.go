@@ -37,25 +37,29 @@ type BrownoutConfig struct {
 
 func (i *instance) GetController(t ControllerType) Controller {
 	var c BrownoutConfig
-	i.logger.InfoV(2, "Trying to parse the config, which is: %q", i.curConfig.Brownout().Rules)
 	_ = json.Unmarshal([]byte(i.curConfig.Brownout().Rules), &c)
-	i.logger.InfoV(2, "%d configurations parsed\n", len(c.Targets))
-
-	i.logger.Info("The map in config %p has the address of %p", &i.curConfig, &i.curConfig.Brownout().Rates)
 
 	for _, value := range c.Targets {
 		i.logger.Info("Initialising the global rates map")
-		// Default rate limit is 1001 requests per 10s (or 100/s)
+		// Default rate limit is 100000 requests per minute
 		for _, path := range value.Paths {
 			r, ok := i.curConfig.Brownout().Rates[path]
 			if !ok {
 				i.logger.Info("Adding %q", path)
-				i.curConfig.Brownout().Rates[path] = 1000
+				i.curConfig.Brownout().Rates[path] = 100000
 				continue
 			}
 			i.logger.Info("Found %q with set rate %d", path, r)
 		}
 	}
+
+	if i.brownout != nil {
+		// Reusing the controller that has already been initialised, just updating some values
+		i.brownout.(*controller).currConfig = i.curConfig.(*config)
+		i.brownout.(*controller).targets = c.Targets
+		return i.brownout
+	}
+
 	out := &controller{
 		needsReload:    false,
 		logger:         i.logger,
@@ -70,7 +74,7 @@ func (i *instance) GetController(t ControllerType) Controller {
 	switch t {
 	case PID:
 		out.control = &brownout.PIDController{
-			MaxOut: 1000,
+			MaxOut: 100000,
 			MinOut: 0,
 			P:      5,
 		}
@@ -110,7 +114,7 @@ func (c *controller) Update(backend *hatypes.Backend) {
 
 	c.execApplyACL(backend, c.getAdjustment(backend.Name, stats))
 	if c.needsReload {
-		c.logger.InfoV(2, "HAProxy will need to reload because of brownout")
+		c.logger.InfoV(2, "Queued updates to be written to disks on next reload")
 	}
 	c.lastUpdate = time.Now()
 }
@@ -221,7 +225,16 @@ func (c *controller) addRateLimitToConfig(path string, rate int) {
 		c.logger.InfoV(2, "Updated the path %q from %d to %d in the rates map %p", path, curr, rate,
 			&c.currConfig.brownout.Rates)
 		c.currConfig.brownout.Rates[path] = rate
+		c.updateBrownoutMap(path, rate)
 		c.needsReload = true
 	}
 	c.metrics.SetBrownOutFeatureStatus(path, float64(rate))
+}
+
+func (c *controller) updateBrownoutMap(path string, adjustment int) {
+	cmd := fmt.Sprintf("set map /etc/haproxy/maps/_brownout_rates.map %s %d", path, adjustment)
+	_, err := c.cmd(c.socket, c.metrics.HAProxySetServerResponseTime, cmd)
+	if err != nil {
+		c.logger.Error("error setting the map value for path %q dynamically", path, err)
+	}
 }

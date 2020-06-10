@@ -75,6 +75,16 @@ func (hm *HostsMap) AppendAliasRegex(base, value string) {
 	}
 }
 
+func (hm *HostsMap) AppendPathCaseSensitive(path, id string) {
+	hm.Match = append(hm.Match, &HostsMapEntry{
+		Key:   path,
+		Value: id,
+	})
+	sort.SliceStable(hm.Match, func(i, j int) bool {
+		return hm.Match[i].Key > hm.Match[j].Key
+	})
+}
+
 // AppendPath ...
 func (hm *HostsMap) AppendPath(path, id string) {
 	// always use case insensitive match

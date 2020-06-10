@@ -363,7 +363,7 @@ func (c *config) WriteBrownoutMaps() error {
 	glog.Info(fmt.Sprintf("Rates are: %+v", c.brownout.Rates))
 	for path, limit := range c.brownout.Rates {
 		glog.Info(fmt.Sprintf("Adding %q to the map with rate %d", path, limit))
-		limitsMap.AppendPath(path, fmt.Sprintf("%d", limit))
+		limitsMap.AppendPathCaseSensitive(path, fmt.Sprintf("%d", limit))
 	}
 	return writeMaps(mapBuilder, c.mapsTemplate)
 }

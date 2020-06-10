@@ -54,7 +54,7 @@ type Instance interface {
 	Config() Config
 	CalcIdleMetric()
 	Update(timer *utils.Timer)
-	RunBrownout() bool
+	RunBrownout()
 }
 
 // CreateInstance ...
@@ -182,6 +182,9 @@ func (i *instance) Config() Config {
 			mapsDir:      i.mapsDir,
 		})
 		i.curConfig = config
+		if i.oldConfig != nil {
+			i.curConfig.Brownout().Rates = i.oldConfig.Brownout().Rates
+		}
 	}
 	return i.curConfig
 }
@@ -209,25 +212,23 @@ func (i *instance) CalcIdleMetric() {
 	i.metrics.AddIdleFactor(idle)
 }
 
-func (i *instance) RunBrownout() bool {
+func (i *instance) RunBrownout() {
 	if i.oldConfig == nil {
 		i.logger.Info("Current config is uninitialised, skipping")
-		return false
+		return
 	}
 
 	if i.brownout == nil {
 		i.logger.Info("Brownout is not yet initialised, skipping")
-		return false
+		return
 	}
 
 	for _, back := range i.oldConfig.Backends().Items() {
 		i.brownout.Update(back)
 	}
-	return i.brownout.NeedsReload()
 }
 
 func (i *instance) Update(timer *utils.Timer) {
-	i.brownout = i.GetController(PID)
 	i.acmeUpdate()
 	i.haproxyUpdate(timer)
 }
@@ -285,6 +286,7 @@ func (i *instance) haproxyUpdate(timer *utils.Timer) {
 	//
 	defer i.rotateConfig()
 	i.curConfig.SyncConfig()
+	i.brownout = i.GetController(PID)
 	if err := i.curConfig.WriteFrontendMaps(); err != nil {
 		i.logger.Error("error building configuration group: %v", err)
 		i.metrics.IncUpdateNoop()
