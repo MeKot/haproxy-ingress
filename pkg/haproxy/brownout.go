@@ -46,7 +46,7 @@ func (i *instance) GetController(t ControllerType) Controller {
 			r, ok := i.curConfig.Brownout().Rates[path]
 			if !ok {
 				i.logger.Info("Adding %q", path)
-				i.curConfig.Brownout().Rates[path] = 100000
+				i.curConfig.Brownout().Rates[path] = 1000
 				continue
 			}
 			i.logger.Info("Found %q with set rate %d", path, r)
@@ -64,7 +64,7 @@ func (i *instance) GetController(t ControllerType) Controller {
 		needsReload:    false,
 		logger:         i.logger,
 		lastUpdate:     time.Now(),
-		reloadInterval: time.Second * 10,
+		reloadInterval: time.Minute,
 		targets:        c.Targets,
 		cmd:            utils.HAProxyCommandWithReturn,
 		socket:         i.curConfig.Global().AdminSocket,
@@ -74,8 +74,8 @@ func (i *instance) GetController(t ControllerType) Controller {
 	switch t {
 	case PID:
 		out.control = &brownout.PIDController{
-			MaxOut: 100000,
-			MinOut: 0,
+			MaxOut: 1000,
+			MinOut: 1,
 			P:      5,
 		}
 		return out
