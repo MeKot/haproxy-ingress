@@ -43,7 +43,7 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 	if out > c.MaxOut {
 		glog.Info("Result is capped")
 		return c.MaxOut
-	} else if c.IntegralSum < c.MinOut {
+	} else if out < c.MinOut {
 		glog.Info("Result is floored")
 		return c.MinOut
 	}
