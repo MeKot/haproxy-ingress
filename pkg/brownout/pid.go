@@ -53,7 +53,7 @@ func (c *PIDController) NextAutoTuned(current float64, lastUpdate time.Duration)
 
 	if !c.autoTuningActive {
 		// Fixing the sign of the PI action
-		c.P = (e / math.Abs(e)) * c.P
+		c.P = (e / math.Abs(e)) * math.Abs(c.P)
 
 		proportionalAction = c.P * e
 

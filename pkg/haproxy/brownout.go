@@ -46,7 +46,7 @@ func (i *instance) GetController(t ControllerType) Controller {
 			r, ok := i.curConfig.Brownout().Rates[path]
 			if !ok {
 				i.logger.Info("Adding %q", path)
-				i.curConfig.Brownout().Rates[path] = 1000
+				i.curConfig.Brownout().Rates[path] = 500
 				continue
 			}
 			i.logger.Info("Found %q with set rate %d", path, r)
@@ -77,8 +77,8 @@ func (i *instance) GetController(t ControllerType) Controller {
 			AutoTuningEnabled: false,
 			MaxOut:            1000,
 			MinOut:            1,
-			P:                 5,
-			I:                 1,
+			P:                 1,
+			I:                 0.01,
 		}
 		return out
 	}
