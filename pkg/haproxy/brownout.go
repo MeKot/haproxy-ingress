@@ -74,9 +74,11 @@ func (i *instance) GetController(t ControllerType) Controller {
 	switch t {
 	case PID:
 		out.control = &brownout.PIDController{
-			MaxOut: 1000,
-			MinOut: 1,
-			P:      5,
+			AutoTuningEnabled: false,
+			MaxOut:            1000,
+			MinOut:            1,
+			P:                 5,
+			I:                 1,
 		}
 		return out
 	}
@@ -156,7 +158,7 @@ func (c *controller) getAdjustment(backend string, stats map[string]string) int 
 			// This is ok, as we only have one variable we control
 			// If extended to multivariable control, this needs to be rewritten
 			// Casting to int, as this directly corresponds to the rate for all non-essential endpoints
-			c.control.SetTarget(float64(target))
+			c.control.SetGoal(float64(target))
 			response = int(c.control.Next(cur, time.Now().Sub(c.lastUpdate)))
 		}
 	}
