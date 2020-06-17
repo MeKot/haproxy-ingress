@@ -32,10 +32,10 @@ type PIDController struct {
 	lastUpToggle        int
 
 	// Strange variables, that I need help in figuring out
-	ti           float64
+	ti           float64 // Integral time
 	pmAutotuning float64
 	duAutotuning float64
-	amplitude    float64 // I get that this is the amplitude of oscillations, but how do I set it?
+	amplitude    float64 // I get that this is the amplitude of oscillations, but based on what do I set it?
 }
 
 func (c *PIDController) NextAutoTuned(current float64, lastUpdate time.Duration) float64 {

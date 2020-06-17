@@ -17,6 +17,7 @@ limitations under the License.
 package types
 
 import (
+	clientset "k8s.io/client-go/kubernetes"
 	"time"
 )
 
@@ -44,6 +45,8 @@ type Brownout struct {
 	Rates               map[string]int
 	Rules               string
 	ACLMapPath          string
+	UpdateDeployments   map[string]int
+	Client              clientset.Interface
 }
 
 // Global ...

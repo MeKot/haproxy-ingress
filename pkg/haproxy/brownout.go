@@ -9,6 +9,7 @@ import (
 	hatypes "github.com/jcmoraisjr/haproxy-ingress/pkg/haproxy/types"
 	"github.com/jcmoraisjr/haproxy-ingress/pkg/haproxy/utils"
 	"github.com/jcmoraisjr/haproxy-ingress/pkg/types"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"strconv"
 	"strings"
 	"time"
@@ -24,11 +25,15 @@ type Controller interface {
 	Update(backend *hatypes.Backend)
 	NeedsReload() bool
 	Reset()
+	UpdateDeployments()
 }
 
 type TargetConfig struct {
-	Paths   []string         `json:"paths"`
-	Targets map[string]int64 `json:"targets"`
+	Paths          []string         `json:"paths"`
+	Targets        map[string]int64 `json:"targets"`
+	TargetReplicas int              `json:"target_replicas"`
+	MaxReplicas    int              `json:"max_replicas"`
+	DeploymentName string           `json:"deployment_name"`
 }
 
 type BrownoutConfig struct {
@@ -37,9 +42,16 @@ type BrownoutConfig struct {
 
 func (i *instance) GetController(t ControllerType) Controller {
 	var c BrownoutConfig
-	_ = json.Unmarshal([]byte(i.curConfig.Brownout().Rules), &c)
+	err := json.Unmarshal([]byte(i.curConfig.Brownout().Rules), &c)
 
-	for _, value := range c.Targets {
+	if err != nil {
+		i.logger.Error("Failed to unmarshal!!")
+		i.logger.Error(err.Error())
+	}
+
+	i.logger.Info("Unmarshalled to %+v", c)
+
+	for depl, value := range c.Targets {
 		i.logger.Info("Initialising the global rates map")
 		// Default rate limit is 100000 requests per minute
 		for _, path := range value.Paths {
@@ -51,6 +63,19 @@ func (i *instance) GetController(t ControllerType) Controller {
 			}
 			i.logger.Info("Found %q with set rate %d", path, r)
 		}
+
+		// Update the scaling parameters
+		v, ok := i.curConfig.Brownout().UpdateDeployments[depl]
+
+		if ok {
+			i.logger.Info("Deployment %q has %d replicas", depl, v)
+		}
+
+		if !ok {
+			// Set to target replicas, so we update them on the next scalability action
+			i.curConfig.Brownout().UpdateDeployments[depl] = value.TargetReplicas
+			i.logger.Info("Det the number of replicas for %q at %d", depl, value.TargetReplicas)
+		}
 	}
 
 	if i.brownout != nil {
@@ -61,15 +86,17 @@ func (i *instance) GetController(t ControllerType) Controller {
 	}
 
 	out := &controller{
-		needsReload:    false,
-		logger:         i.logger,
-		lastUpdate:     time.Now(),
-		reloadInterval: time.Minute,
-		targets:        c.Targets,
-		cmd:            utils.HAProxyCommandWithReturn,
-		socket:         i.curConfig.Global().AdminSocket,
-		metrics:        i.metrics,
-		currConfig:     i.curConfig.(*config),
+		needsReload:       false,
+		logger:            i.logger,
+		lastUpdate:        time.Now(),
+		lastScalingUpdate: time.Now(),
+		scalingInterval:   time.Minute, // TODO: Make it 5
+		reloadInterval:    time.Minute,
+		targets:           c.Targets,
+		cmd:               utils.HAProxyCommandWithReturn,
+		socket:            i.curConfig.Global().AdminSocket,
+		metrics:           i.metrics,
+		currConfig:        i.curConfig.(*config),
 	}
 	switch t {
 	case PID:
@@ -87,16 +114,18 @@ func (i *instance) GetController(t ControllerType) Controller {
 
 // controller used to perform runtime updates
 type controller struct {
-	reloadInterval time.Duration
-	lastUpdate     time.Time
-	needsReload    bool
-	logger         types.Logger
-	targets        map[string]TargetConfig
-	cmd            func(socket string, observer func(duration time.Duration), commands ...string) ([]string, error)
-	socket         string
-	metrics        types.Metrics
-	currConfig     *config
-	control        brownout.Controller
+	reloadInterval    time.Duration
+	lastUpdate        time.Time
+	lastScalingUpdate time.Time
+	scalingInterval   time.Duration
+	needsReload       bool
+	logger            types.Logger
+	targets           map[string]TargetConfig
+	cmd               func(socket string, observer func(duration time.Duration), commands ...string) ([]string, error)
+	socket            string
+	metrics           types.Metrics
+	currConfig        *config
+	control           brownout.Controller
 }
 
 // Coordinates metric collection and updates the config with any necessary action
@@ -119,6 +148,34 @@ func (c *controller) Update(backend *hatypes.Backend) {
 		c.logger.InfoV(2, "Queued updates to be written to disks on next reload")
 	}
 	c.lastUpdate = time.Now()
+
+	if c.lastScalingUpdate.Add(c.scalingInterval).After(time.Now()) {
+		return
+	}
+
+	c.logger.Info("In the Update, the targets are %+v", c.targets)
+
+	for depl, config := range c.targets {
+		// TODO: Fix the hardcoded values
+		c.logger.Info("Considering deployment %q for scaling", depl)
+		if c.currConfig.brownout.Rates[config.Paths[0]] < 500 {
+			// We are under load and may consider scaling out
+			if c.currConfig.brownout.UpdateDeployments[depl] < config.MaxReplicas {
+				// We have room for extra replicas
+				c.currConfig.brownout.UpdateDeployments[depl] += 1
+				c.logger.Info("Scaled deployment %q to %d replicas", depl, c.currConfig.brownout.UpdateDeployments[depl])
+			}
+		} else if c.currConfig.brownout.Rates[config.Paths[0]] > 999 {
+			// We are no longer under load and may consider scaling down
+			if c.currConfig.brownout.UpdateDeployments[depl] > config.TargetReplicas {
+				// We have more replicas provisioned then our target
+				c.currConfig.brownout.UpdateDeployments[depl] -= 1
+				c.logger.Info("Scaled deployment %q to %d replicas", depl, c.currConfig.brownout.UpdateDeployments[depl])
+			}
+		}
+	}
+
+	c.UpdateDeployments()
 }
 
 func (c *controller) NeedsReload() bool {
@@ -239,4 +296,31 @@ func (c *controller) updateBrownoutMap(path string, adjustment int) {
 	if err != nil {
 		c.logger.Error("error setting the map value for path %q dynamically", path, err)
 	}
+}
+
+func (c *controller) UpdateDeployments() {
+	c.logger.Info("Updating Deployments to %+v", c.currConfig.brownout.UpdateDeployments)
+	for depl, repl := range c.currConfig.brownout.UpdateDeployments {
+		d, err := c.currConfig.brownout.Client.AppsV1().Deployments("default").Get(depl, metav1.GetOptions{})
+
+		if err != nil {
+			c.logger.Error("could not get the deployement for %q", depl)
+			c.logger.Error(err.Error())
+			continue
+		}
+
+		c.logger.Info("Got deployment %q, it has %d replicas", depl, d.Spec.Replicas)
+
+		if int(*d.Spec.Replicas) != repl {
+			*d.Spec.Replicas = int32(repl)
+			_, err = c.currConfig.brownout.Client.AppsV1().Deployments("default").Update(d)
+
+			if err != nil {
+				c.logger.Error("error updating the deployment %q", depl)
+				c.logger.Error(err.Error())
+			}
+		}
+
+	}
+
 }

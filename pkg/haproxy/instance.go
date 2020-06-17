@@ -184,6 +184,7 @@ func (i *instance) Config() Config {
 		i.curConfig = config
 		if i.oldConfig != nil {
 			i.curConfig.Brownout().Rates = i.oldConfig.Brownout().Rates
+			i.curConfig.Brownout().UpdateDeployments = i.oldConfig.Brownout().UpdateDeployments
 		}
 	}
 	return i.curConfig

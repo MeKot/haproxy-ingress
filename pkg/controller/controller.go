@@ -412,6 +412,7 @@ func (hc *HAProxyController) syncIngress(item interface{}) {
 		hc.instance.Config(),
 		globalConfig,
 	)
+	hc.instance.Config().Brownout().Client = hc.cfg.Client
 	ingConverter.Sync(ingress)
 	timer.Tick("parse_ingress")
 
