@@ -34,6 +34,7 @@ type metrics struct {
 	certSigningCounter      *prometheus.CounterVec
 	backendResponseTimes    *prometheus.HistogramVec
 	backendFeaturesDisabled *prometheus.GaugeVec
+	backendNumberOfPods     *prometheus.GaugeVec
 	lastTrack               time.Time
 }
 
@@ -122,6 +123,14 @@ func createMetrics(bucketsResponseTime []float64) *metrics {
 			},
 			[]string{"feature"},
 		),
+		backendNumberOfPods: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "backend_num_pods",
+				Help:      "Number of pods per backend",
+			},
+			[]string{"backend"},
+		),
 	}
 	prometheus.MustRegister(metrics.responseTime)
 	prometheus.MustRegister(metrics.ctlProcTimeSum)
@@ -133,6 +142,7 @@ func createMetrics(bucketsResponseTime []float64) *metrics {
 	prometheus.MustRegister(metrics.certSigningCounter)
 	prometheus.MustRegister(metrics.backendResponseTimes)
 	prometheus.MustRegister(metrics.backendFeaturesDisabled)
+	prometheus.MustRegister(metrics.backendNumberOfPods)
 	return metrics
 }
 
@@ -203,4 +213,8 @@ func (m *metrics) SetBrownOutFeatureStatus(feature string, currentValue float64)
 
 func (m *metrics) SetBackendResponseTime(backend string, duration time.Duration) {
 	m.backendResponseTimes.WithLabelValues(backend).Observe(duration.Seconds())
+}
+
+func (m *metrics) SetBackendNumberOfPods(backend string, pods int32) {
+	m.backendNumberOfPods.WithLabelValues(backend).Set(float64(pods))
 }

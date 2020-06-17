@@ -320,6 +320,8 @@ func (c *controller) UpdateDeployments() {
 				c.logger.Error("error updating the deployment %q", depl)
 				c.logger.Error(err.Error())
 			}
+
+			c.metrics.SetBackendNumberOfPods(depl, *d.Spec.Replicas)
 		}
 
 	}

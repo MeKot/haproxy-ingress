@@ -38,4 +38,5 @@ type Metrics interface {
 	// Brownout-specific metrics
 	SetBrownOutFeatureStatus(feature string, currentValue float64)
 	SetBackendResponseTime(backend string, duration time.Duration)
+	SetBackendNumberOfPods(backend string, pods int32)
 }
