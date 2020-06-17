@@ -51,7 +51,7 @@ func (i *instance) GetController(t ControllerType) Controller {
 
 	i.logger.Info("Unmarshalled to %+v", c)
 
-	for depl, value := range c.Targets {
+	for _, value := range c.Targets {
 		i.logger.Info("Initialising the global rates map")
 		// Default rate limit is 100000 requests per minute
 		for _, path := range value.Paths {
@@ -65,16 +65,16 @@ func (i *instance) GetController(t ControllerType) Controller {
 		}
 
 		// Update the scaling parameters
-		v, ok := i.curConfig.Brownout().UpdateDeployments[depl]
+		v, ok := i.curConfig.Brownout().UpdateDeployments[value.DeploymentName]
 
 		if ok {
-			i.logger.Info("Deployment %q has %d replicas", depl, v)
+			i.logger.Info("Deployment %q has %d replicas", value.DeploymentName, v)
 		}
 
 		if !ok {
 			// Set to target replicas, so we update them on the next scalability action
-			i.curConfig.Brownout().UpdateDeployments[depl] = value.TargetReplicas
-			i.logger.Info("Det the number of replicas for %q at %d", depl, value.TargetReplicas)
+			i.curConfig.Brownout().UpdateDeployments[value.DeploymentName] = value.TargetReplicas
+			i.logger.Info("Det the number of replicas for %q at %d", value.DeploymentName, value.TargetReplicas)
 		}
 	}
 
@@ -155,22 +155,23 @@ func (c *controller) Update(backend *hatypes.Backend) {
 
 	c.logger.Info("In the Update, the targets are %+v", c.targets)
 
-	for depl, config := range c.targets {
+	for _, config := range c.targets {
 		// TODO: Fix the hardcoded values
-		c.logger.Info("Considering deployment %q for scaling", depl)
+		c.logger.Info("Considering deployment %q for scaling", config.DeploymentName)
 		if c.currConfig.brownout.Rates[config.Paths[0]] < 500 {
 			// We are under load and may consider scaling out
-			if c.currConfig.brownout.UpdateDeployments[depl] < config.MaxReplicas {
+			if c.currConfig.brownout.UpdateDeployments[config.DeploymentName] < config.MaxReplicas {
 				// We have room for extra replicas
-				c.currConfig.brownout.UpdateDeployments[depl] += 1
-				c.logger.Info("Scaled deployment %q to %d replicas", depl, c.currConfig.brownout.UpdateDeployments[depl])
+				c.currConfig.brownout.UpdateDeployments[config.DeploymentName] += 1
+				c.logger.Info("Scaled deployment %q to %d replicas", config.DeploymentName,
+					c.currConfig.brownout.UpdateDeployments[config.DeploymentName])
 			}
 		} else if c.currConfig.brownout.Rates[config.Paths[0]] > 999 {
 			// We are no longer under load and may consider scaling down
-			if c.currConfig.brownout.UpdateDeployments[depl] > config.TargetReplicas {
+			if c.currConfig.brownout.UpdateDeployments[config.DeploymentName] > config.TargetReplicas {
 				// We have more replicas provisioned then our target
-				c.currConfig.brownout.UpdateDeployments[depl] -= 1
-				c.logger.Info("Scaled deployment %q to %d replicas", depl, c.currConfig.brownout.UpdateDeployments[depl])
+				c.currConfig.brownout.UpdateDeployments[config.DeploymentName] -= 1
+				c.logger.Info("Scaled deployment %q to %d replicas", config.DeploymentName, c.currConfig.brownout.UpdateDeployments[config.DeploymentName])
 			}
 		}
 	}
@@ -309,7 +310,7 @@ func (c *controller) UpdateDeployments() {
 			continue
 		}
 
-		c.logger.Info("Got deployment %q, it has %d replicas", depl, d.Spec.Replicas)
+		c.logger.Info("Got deployment %q, it has %d replicas", depl, int(*d.Spec.Replicas))
 
 		if int(*d.Spec.Replicas) != repl {
 			*d.Spec.Replicas = int32(repl)
