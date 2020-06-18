@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"time"
 
 	hatypes "github.com/jcmoraisjr/haproxy-ingress/pkg/haproxy/types"
@@ -125,7 +126,6 @@ func (d *dynUpdater) checkConfigPair() bool {
 	// true if deep equals or sucessfully updated
 	// false if cannot be dynamically updated or update failed
 	for _, pair := range backends {
-		// Run brownout on the backends
 		if !d.checkBackendPair(pair) {
 			return false
 		}
@@ -307,27 +307,26 @@ func (d *dynUpdater) execDisableEndpoint(backname string, ep *hatypes.Endpoint) 
 
 func (d *dynUpdater) execEnableEndpoint(backname string, oldEP, curEP *hatypes.Endpoint) bool {
 	// This forces servers that are under heavy load into drain state, which is not the behaviour we want
-	//state := map[bool]string{true: "ready", false: "drain"}[curEP.Weight > 0]
-	////d.logger.InfoV(2, "Enabling the server: %q / %q into the %q state", backname, curEP.Name, state)
-	//server := fmt.Sprintf("set server %s/%s ", backname, curEP.Name)
-	//cmd := []string{
-	//	server + "addr " + curEP.IP + " port " + strconv.Itoa(curEP.Port),
-	//	server + "state " + state,
-	//	server + "weight " + strconv.Itoa(curEP.Weight),
-	//}
-	//msg, err := d.execCommand(d.metrics.HAProxySetServerResponseTime, cmd)
-	//if err != nil {
-	//	d.logger.Error("error adding/updating endpoint %s/%s: %v", backname, curEP.Name, err)
-	//	return false
-	//}
-	//event := map[bool]string{true: "updated", false: "added"}[oldEP != nil]
-	//d.logger.InfoV(2, "%s endpoint '%s' weight '%d' state '%s' on backend/server '%s/%s'",
-	//	event, curEP.Target, curEP.Weight, state, backname, curEP.Name)
-	//for _, m := range msg {
-	//	d.logger.InfoV(2, m)
-	//}
-	//return true
-	return false
+	state := map[bool]string{true: "ready", false: "drain"}[curEP.Weight > 0]
+	//d.logger.InfoV(2, "Enabling the server: %q / %q into the %q state", backname, curEP.Name, state)
+	server := fmt.Sprintf("set server %s/%s ", backname, curEP.Name)
+	cmd := []string{
+		server + "addr " + curEP.IP + " port " + strconv.Itoa(curEP.Port),
+		server + "state " + state,
+		server + "weight " + strconv.Itoa(curEP.Weight),
+	}
+	msg, err := d.execCommand(d.metrics.HAProxySetServerResponseTime, cmd)
+	if err != nil {
+		d.logger.Error("error adding/updating endpoint %s/%s: %v", backname, curEP.Name, err)
+		return false
+	}
+	event := map[bool]string{true: "updated", false: "added"}[oldEP != nil]
+	d.logger.InfoV(2, "%s endpoint '%s' weight '%d' state '%s' on backend/server '%s/%s'",
+		event, curEP.Target, curEP.Weight, state, backname, curEP.Name)
+	for _, m := range msg {
+		d.logger.InfoV(2, m)
+	}
+	return true
 }
 
 func (d *dynUpdater) execCommand(observer func(duration time.Duration), cmd []string) ([]string, error) {

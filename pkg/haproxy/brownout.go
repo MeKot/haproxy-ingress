@@ -23,8 +23,6 @@ const (
 
 type Controller interface {
 	Update(backend *hatypes.Backend)
-	NeedsReload() bool
-	Reset()
 	UpdateDeployments()
 }
 
@@ -90,8 +88,8 @@ func (i *instance) GetController(t ControllerType) Controller {
 		logger:            i.logger,
 		lastUpdate:        time.Now(),
 		lastScalingUpdate: time.Now(),
-		scalingInterval:   time.Minute, // TODO: Make it 5
-		reloadInterval:    time.Minute,
+		scalingInterval:   time.Minute * 2, // TODO: Make it 5, or add filtering?
+		reloadInterval:    time.Second * 20,
 		targets:           c.Targets,
 		cmd:               utils.HAProxyCommandWithReturn,
 		socket:            i.curConfig.Global().AdminSocket,
@@ -101,11 +99,19 @@ func (i *instance) GetController(t ControllerType) Controller {
 	switch t {
 	case PID:
 		out.control = &brownout.PIDController{
-			AutoTuningEnabled: false,
-			MaxOut:            1000,
-			MinOut:            1,
-			P:                 1,
-			I:                 0.01,
+			AutoTuningEnabled:   true,
+			MaxOut:              1000,
+			MinOut:              1,
+			P:                   0.5,
+			I:                   0.1,
+			Ti:                  10,
+			PmAutotuning:        60.0,
+			DuAutotuning:        100,
+			OxMax:               -1e6,
+			OxMin:               1e6,
+			AutoTuningThreshold: 300.0,
+			AutoTuningActive:    false,
+			Metrics:             i.metrics,
 		}
 		return out
 	}
@@ -146,6 +152,7 @@ func (c *controller) Update(backend *hatypes.Backend) {
 	c.execApplyACL(backend, c.getAdjustment(backend.Name, stats))
 	if c.needsReload {
 		c.logger.InfoV(2, "Queued updates to be written to disks on next reload")
+		c.needsReload = false
 	}
 	c.lastUpdate = time.Now()
 
@@ -155,8 +162,8 @@ func (c *controller) Update(backend *hatypes.Backend) {
 
 	c.logger.Info("In the Update, the targets are %+v", c.targets)
 
+	// TODO: Fix hardcoded values, add filtering (i.e. if the last 3 controller updates were low --> scale)
 	for _, config := range c.targets {
-		// TODO: Fix the hardcoded values
 		c.logger.Info("Considering deployment %q for scaling", config.DeploymentName)
 		if c.currConfig.brownout.Rates[config.Paths[0]] < 500 {
 			// We are under load and may consider scaling out
@@ -177,14 +184,6 @@ func (c *controller) Update(backend *hatypes.Backend) {
 	}
 
 	c.UpdateDeployments()
-}
-
-func (c *controller) NeedsReload() bool {
-	return c.needsReload
-}
-
-func (c *controller) Reset() {
-	c.needsReload = false
 }
 
 func (c *controller) execApplyACL(backend *hatypes.Backend, adjustment int) {
@@ -217,7 +216,7 @@ func (c *controller) getAdjustment(backend string, stats map[string]string) int 
 			// If extended to multivariable control, this needs to be rewritten
 			// Casting to int, as this directly corresponds to the rate for all non-essential endpoints
 			c.control.SetGoal(float64(target))
-			response = int(c.control.Next(cur, time.Now().Sub(c.lastUpdate)))
+			response = int(c.control.NextAutoTuned(cur, time.Now().Sub(c.lastUpdate)))
 		}
 	}
 	return response
@@ -321,8 +320,9 @@ func (c *controller) UpdateDeployments() {
 				c.logger.Error(err.Error())
 			}
 
-			c.metrics.SetBackendNumberOfPods(depl, *d.Spec.Replicas)
+			c.lastScalingUpdate = time.Now()
 		}
+		c.metrics.SetBackendNumberOfPods(depl, *d.Spec.Replicas)
 
 	}
 

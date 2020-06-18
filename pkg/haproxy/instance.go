@@ -305,7 +305,7 @@ func (i *instance) haproxyUpdate(timer *utils.Timer) {
 	}
 	updater := i.newDynUpdater()
 	updated := updater.update()
-	if !updated || updater.cmdCnt > 0 || i.brownout.NeedsReload() {
+	if !updated || updater.cmdCnt > 0 {
 		// only need to rewrite config files if:
 		//   - brownout.NeedsReload() - the brownout maps have changed, need to restart the proxy to reload them
 		//   - !updated           - there are changes that cannot be dynamically applied
@@ -322,7 +322,7 @@ func (i *instance) haproxyUpdate(timer *utils.Timer) {
 			return
 		}
 	}
-	if updated && !i.brownout.NeedsReload() {
+	if updated {
 		if updater.cmdCnt > 0 {
 			if i.options.ValidateConfig {
 				var err error
@@ -348,7 +348,6 @@ func (i *instance) haproxyUpdate(timer *utils.Timer) {
 		return
 	}
 	// HAProxy has been reloaded, we can reset
-	i.brownout.Reset()
 	timer.Tick("reload_haproxy")
 	i.metrics.UpdateSuccessful(true)
 	i.logger.Info("HAProxy successfully reloaded")

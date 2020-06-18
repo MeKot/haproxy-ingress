@@ -35,6 +35,9 @@ type metrics struct {
 	backendResponseTimes    *prometheus.HistogramVec
 	backendFeaturesDisabled *prometheus.GaugeVec
 	backendNumberOfPods     *prometheus.GaugeVec
+	controlError            *prometheus.GaugeVec
+	controllerPValue        *prometheus.GaugeVec
+	controllerIValue        *prometheus.GaugeVec
 	lastTrack               time.Time
 }
 
@@ -131,6 +134,30 @@ func createMetrics(bucketsResponseTime []float64) *metrics {
 			},
 			[]string{"backend"},
 		),
+		controlError: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "control_error",
+				Help:      "Error that controller reacts to",
+			},
+			[]string{},
+		),
+		controllerPValue: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "controller_p_value",
+				Help:      "Proportionate action of the controller",
+			},
+			[]string{},
+		),
+		controllerIValue: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Name:      "controller_i_value",
+				Help:      "Integral action of the controller",
+			},
+			[]string{},
+		),
 	}
 	prometheus.MustRegister(metrics.responseTime)
 	prometheus.MustRegister(metrics.ctlProcTimeSum)
@@ -143,6 +170,9 @@ func createMetrics(bucketsResponseTime []float64) *metrics {
 	prometheus.MustRegister(metrics.backendResponseTimes)
 	prometheus.MustRegister(metrics.backendFeaturesDisabled)
 	prometheus.MustRegister(metrics.backendNumberOfPods)
+	prometheus.MustRegister(metrics.controllerIValue)
+	prometheus.MustRegister(metrics.controllerPValue)
+	prometheus.MustRegister(metrics.controlError)
 	return metrics
 }
 
@@ -217,4 +247,16 @@ func (m *metrics) SetBackendResponseTime(backend string, duration time.Duration)
 
 func (m *metrics) SetBackendNumberOfPods(backend string, pods int32) {
 	m.backendNumberOfPods.WithLabelValues(backend).Set(float64(pods))
+}
+
+func (m *metrics) SetControllerResponse(response float64) {
+	m.controlError.WithLabelValues().Set(response)
+}
+
+func (m *metrics) SetControllerPValue(pvalue float64) {
+	m.controllerPValue.WithLabelValues().Set(pvalue)
+}
+
+func (m *metrics) SetControllerIValue(ivalue float64) {
+	m.controllerIValue.WithLabelValues().Set(ivalue)
 }
