@@ -74,8 +74,10 @@ func (c *PIDController) NextAutoTuned(current float64, lastUpdate time.Duration)
 	c.clampOutput()
 	c.integralSum = c.current - proportionalAction
 
-	c.Metrics.SetControllerIValue(c.integralSum)
-	c.Metrics.SetControllerPValue(c.P)
+	c.Metrics.SetControllerParameterValue(c.Ti, "Ti")
+	c.Metrics.SetControllerParameterValue(c.P, "K")
+	c.Metrics.SetControllerActionValue(c.P*e, "proportionate")
+	c.Metrics.SetControllerActionValue(c.integralSum, "integral_sum")
 	c.Metrics.SetControllerResponse(e)
 
 	return c.current
@@ -144,8 +146,8 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 		return c.MinOut
 	}
 
-	c.Metrics.SetControllerIValue(c.integralSum)
-	c.Metrics.SetControllerPValue(c.P)
+	c.Metrics.SetControllerActionValue(c.P*e, "proportionate")
+	c.Metrics.SetControllerActionValue(c.integralSum, "integral_sum")
 	c.Metrics.SetControllerResponse(e)
 	return out
 }

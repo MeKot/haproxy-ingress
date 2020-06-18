@@ -40,6 +40,6 @@ type Metrics interface {
 	SetBackendResponseTime(backend string, duration time.Duration)
 	SetBackendNumberOfPods(backend string, pods int32)
 	SetControllerResponse(response float64)
-	SetControllerIValue(ivalue float64)
-	SetControllerPValue(pvalue float64)
+	SetControllerParameterValue(ivalue float64, param string)
+	SetControllerActionValue(pvalue float64, action string)
 }

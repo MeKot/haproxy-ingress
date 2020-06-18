@@ -36,8 +36,8 @@ type metrics struct {
 	backendFeaturesDisabled *prometheus.GaugeVec
 	backendNumberOfPods     *prometheus.GaugeVec
 	controlError            *prometheus.GaugeVec
-	controllerPValue        *prometheus.GaugeVec
-	controllerIValue        *prometheus.GaugeVec
+	controllerParameter     *prometheus.GaugeVec
+	controllerActions       *prometheus.GaugeVec
 	lastTrack               time.Time
 }
 
@@ -142,21 +142,21 @@ func createMetrics(bucketsResponseTime []float64) *metrics {
 			},
 			[]string{},
 		),
-		controllerPValue: prometheus.NewGaugeVec(
+		controllerParameter: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
-				Name:      "controller_p_value",
-				Help:      "Proportionate action of the controller",
+				Name:      "controller_params",
+				Help:      "Controller parameter values",
 			},
-			[]string{},
+			[]string{"parameter"},
 		),
-		controllerIValue: prometheus.NewGaugeVec(
+		controllerActions: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Namespace: namespace,
-				Name:      "controller_i_value",
-				Help:      "Integral action of the controller",
+				Name:      "controller_actions",
+				Help:      "Control actions",
 			},
-			[]string{},
+			[]string{"action"},
 		),
 	}
 	prometheus.MustRegister(metrics.responseTime)
@@ -170,8 +170,8 @@ func createMetrics(bucketsResponseTime []float64) *metrics {
 	prometheus.MustRegister(metrics.backendResponseTimes)
 	prometheus.MustRegister(metrics.backendFeaturesDisabled)
 	prometheus.MustRegister(metrics.backendNumberOfPods)
-	prometheus.MustRegister(metrics.controllerIValue)
-	prometheus.MustRegister(metrics.controllerPValue)
+	prometheus.MustRegister(metrics.controllerActions)
+	prometheus.MustRegister(metrics.controllerParameter)
 	prometheus.MustRegister(metrics.controlError)
 	return metrics
 }
@@ -253,10 +253,10 @@ func (m *metrics) SetControllerResponse(response float64) {
 	m.controlError.WithLabelValues().Set(response)
 }
 
-func (m *metrics) SetControllerPValue(pvalue float64) {
-	m.controllerPValue.WithLabelValues().Set(pvalue)
+func (m *metrics) SetControllerParameterValue(pvalue float64, param string) {
+	m.controllerParameter.WithLabelValues(param).Set(pvalue)
 }
 
-func (m *metrics) SetControllerIValue(ivalue float64) {
-	m.controllerIValue.WithLabelValues().Set(ivalue)
+func (m *metrics) SetControllerActionValue(ivalue float64, action string) {
+	m.controllerActions.WithLabelValues(action).Set(ivalue)
 }
