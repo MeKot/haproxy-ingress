@@ -711,7 +711,7 @@ frontend _front_http
 
 {{- /*------------------------------------*/}}
 {{- if $cfg.Brownout.Enabled }}
-    stick-table  type string  len 45  size 100k  expire 3m  store http_req_rate(3m)
+    stick-table  type string  len 45  size 100k  expire 30s  store http_req_rate(30s)
 
     # Parameterise cookie name?
     http-request track-sc0 cook(JSESSIONID)
