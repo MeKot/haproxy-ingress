@@ -313,13 +313,13 @@ func (c *controller) UpdateDeployments() {
 		c.logger.Info("Got deployment %q, it has %d replicas", depl, int(*d.Spec.Replicas))
 
 		if int(*d.Spec.Replicas) != repl {
-			//*d.Spec.Replicas = int32(repl)
-			//_, err = c.currConfig.brownout.Client.AppsV1().Deployments("default").Update(d)
+			*d.Spec.Replicas = int32(repl)
+			_, err = c.currConfig.brownout.Client.AppsV1().Deployments("default").Update(d)
 
-			//if err != nil {
-			//	c.logger.Error("error updating the deployment %q", depl)
-			//	c.logger.Error(err.Error())
-			//}
+			if err != nil {
+				c.logger.Error("error updating the deployment %q", depl)
+				c.logger.Error(err.Error())
+			}
 
 			c.lastScalingUpdate = time.Now()
 		}
