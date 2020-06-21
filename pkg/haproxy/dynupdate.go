@@ -287,7 +287,6 @@ func (d *dynUpdater) alignSlots() {
 
 func (d *dynUpdater) execDisableEndpoint(backname string, ep *hatypes.Endpoint) bool {
 	server := fmt.Sprintf("set server %s/%s ", backname, ep.Name)
-	d.logger.InfoV(2, "Switching the server: %q / %q into maintenance", backname, ep.Name)
 	cmd := []string{
 		server + "state maint",
 		server + "addr 127.0.0.1 port 1023",
@@ -298,7 +297,6 @@ func (d *dynUpdater) execDisableEndpoint(backname string, ep *hatypes.Endpoint) 
 		d.logger.Error("error disabling endpoint %s/%s: %v", backname, ep.Name, err)
 		return false
 	}
-	d.logger.InfoV(2, "disabled endpoint '%s' on backend/server '%s/%s'", ep.Target, backname, ep.Name)
 	for _, m := range msg {
 		d.logger.InfoV(2, m)
 	}
