@@ -26,7 +26,7 @@ type PIDController struct {
 	Metrics types.Metrics
 
 	// Auto-Tuning things
-	current             float64
+	Current             float64
 	stepCounter         int
 	AutoTuningActive    bool
 	AutoTuningThreshold float64
@@ -65,32 +65,32 @@ func (c *PIDController) NextAutoTuned(current float64, lastUpdate time.Duration)
 		proportionalAction = c.P * e
 
 		// Calculating the PI action
-		c.current = proportionalAction + c.integralSum + (c.P*(lastUpdate.Seconds()/c.Ti))*e
-		glog.Info(fmt.Sprintf("Poportional action is %f and controller response is %f", proportionalAction, c.current))
+		c.Current = proportionalAction + c.integralSum + (c.P*(lastUpdate.Seconds()/c.Ti))*e
+		glog.Info(fmt.Sprintf("Poportional action is %f and controller response is %f", proportionalAction, c.Current))
 	} else {
 		c.autoTune(e, lastUpdate, current)
 	}
 
 	c.clampOutput()
-	c.integralSum = c.current - proportionalAction
+	c.integralSum = c.Current - proportionalAction
 
 	c.Metrics.SetControllerParameterValue(c.Ti, "Ti")
 	c.Metrics.SetControllerParameterValue(c.P, "K")
-	c.Metrics.SetControllerActionValue(c.P*e, "proportionate")
+	c.Metrics.SetControllerActionValue(c.P*e, "proportional")
 	c.Metrics.SetControllerActionValue(c.integralSum, "integral_sum")
 	c.Metrics.SetControllerResponse(e)
 
-	return c.current
+	return c.Current
 }
 
 func (c *PIDController) autoTune(e float64, lastUpdate time.Duration, current float64) {
 	glog.Info("AUTOTUNING!!!")
 	atRelays := -1
 	if e > 0 {
-		c.current += c.DuAutotuning
+		c.Current += c.DuAutotuning
 		atRelays = 1
 	} else {
-		c.current -= c.DuAutotuning
+		c.Current -= c.DuAutotuning
 	}
 
 	c.OxMax = math.Max(c.OxMax, current)
@@ -146,7 +146,7 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 		return c.MinOut
 	}
 
-	c.Metrics.SetControllerActionValue(c.P*e, "proportionate")
+	c.Metrics.SetControllerActionValue(c.P*e, "proportional")
 	c.Metrics.SetControllerActionValue(c.integralSum, "integral_sum")
 	c.Metrics.SetControllerResponse(e)
 	return out
@@ -154,15 +154,12 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 
 func (c *PIDController) SetGoal(newGoal float64) {
 	c.goal = newGoal
-	if c.current == 0 {
-		c.current = c.MinOut + (c.MaxOut-c.MinOut)/2
-	}
 }
 
 func (c *PIDController) clampOutput() {
-	if c.current > c.MaxOut {
-		c.current = c.MaxOut
-	} else if c.current < c.MinOut {
-		c.current = c.MinOut
+	if c.Current > c.MaxOut {
+		c.Current = c.MaxOut
+	} else if c.Current < c.MinOut {
+		c.Current = c.MinOut
 	}
 }

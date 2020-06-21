@@ -89,7 +89,7 @@ func (i *instance) GetController(t ControllerType) Controller {
 		lastUpdate:        time.Now(),
 		lastScalingUpdate: time.Now(),
 		scalingInterval:   time.Minute * 2, // TODO: Make it 5, or add filtering?
-		reloadInterval:    time.Second * 20,
+		reloadInterval:    time.Second * 10,
 		targets:           c.Targets,
 		cmd:               utils.HAProxyCommandWithReturn,
 		socket:            i.curConfig.Global().AdminSocket,
@@ -109,6 +109,7 @@ func (i *instance) GetController(t ControllerType) Controller {
 			DuAutotuning:        100,
 			OxMax:               -1e6,
 			OxMin:               1e6,
+			Current:             (2e6) / 2,
 			AutoTuningThreshold: 300.0,
 			AutoTuningActive:    false,
 			Metrics:             i.metrics,
@@ -312,13 +313,13 @@ func (c *controller) UpdateDeployments() {
 		c.logger.Info("Got deployment %q, it has %d replicas", depl, int(*d.Spec.Replicas))
 
 		if int(*d.Spec.Replicas) != repl {
-			*d.Spec.Replicas = int32(repl)
-			_, err = c.currConfig.brownout.Client.AppsV1().Deployments("default").Update(d)
+			//*d.Spec.Replicas = int32(repl)
+			//_, err = c.currConfig.brownout.Client.AppsV1().Deployments("default").Update(d)
 
-			if err != nil {
-				c.logger.Error("error updating the deployment %q", depl)
-				c.logger.Error(err.Error())
-			}
+			//if err != nil {
+			//	c.logger.Error("error updating the deployment %q", depl)
+			//	c.logger.Error(err.Error())
+			//}
 
 			c.lastScalingUpdate = time.Now()
 		}
