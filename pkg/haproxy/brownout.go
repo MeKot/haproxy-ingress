@@ -118,6 +118,8 @@ func (i *instance) GetController(t ControllerType) Controller {
 			MetricLabel:         "dimmer",
 		}
 		out.scaler = &brownout.PIDController{
+			OxMax:         1000,
+			OxMin:         1,
 			MaxOut:        6,
 			MinOut:        1,
 			P:             0.0015,
