@@ -140,7 +140,7 @@ func createMetrics(bucketsResponseTime []float64) *metrics {
 				Name:      "control_error",
 				Help:      "Error that controller reacts to",
 			},
-			[]string{},
+			[]string{"label"},
 		),
 		controllerParameter: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -148,7 +148,7 @@ func createMetrics(bucketsResponseTime []float64) *metrics {
 				Name:      "controller_params",
 				Help:      "Controller parameter values",
 			},
-			[]string{"parameter"},
+			[]string{"parameter", "label"},
 		),
 		controllerActions: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -156,7 +156,7 @@ func createMetrics(bucketsResponseTime []float64) *metrics {
 				Name:      "controller_actions",
 				Help:      "Control actions",
 			},
-			[]string{"action"},
+			[]string{"action", "label"},
 		),
 	}
 	prometheus.MustRegister(metrics.responseTime)
@@ -249,14 +249,14 @@ func (m *metrics) SetBackendNumberOfPods(backend string, pods int32) {
 	m.backendNumberOfPods.WithLabelValues(backend).Set(float64(pods))
 }
 
-func (m *metrics) SetControllerResponse(response float64) {
-	m.controlError.WithLabelValues().Set(response)
+func (m *metrics) SetControllerResponse(response float64, label string) {
+	m.controlError.WithLabelValues(label).Set(response)
 }
 
-func (m *metrics) SetControllerParameterValue(pvalue float64, param string) {
-	m.controllerParameter.WithLabelValues(param).Set(pvalue)
+func (m *metrics) SetControllerParameterValue(pvalue float64, param string, label string) {
+	m.controllerParameter.WithLabelValues(param, label).Set(pvalue)
 }
 
-func (m *metrics) SetControllerActionValue(ivalue float64, action string) {
-	m.controllerActions.WithLabelValues(action).Set(ivalue)
+func (m *metrics) SetControllerActionValue(ivalue float64, action string, label string) {
+	m.controllerActions.WithLabelValues(action, label).Set(ivalue)
 }
