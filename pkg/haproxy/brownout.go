@@ -88,7 +88,8 @@ func (i *instance) GetController(t ControllerType) Controller {
 		logger:            i.logger,
 		lastUpdate:        time.Now(),
 		lastScalingUpdate: time.Now(),
-		scalingInterval:   time.Minute * 2, // TODO: Make it 5, or add filtering?
+		scalingInterval:   time.Minute * 1,
+		scalingHysteris:   time.Minute * 2,
 		reloadInterval:    time.Second * 10,
 		targets:           c.Targets,
 		cmd:               utils.HAProxyCommandWithReturn,
@@ -98,7 +99,7 @@ func (i *instance) GetController(t ControllerType) Controller {
 	}
 	switch t {
 	case PID:
-		out.control = &brownout.PIDController{
+		out.dimmer = &brownout.PIDController{
 			AutoTuningEnabled:   true,
 			MaxOut:              1000,
 			MinOut:              1,
@@ -112,7 +113,18 @@ func (i *instance) GetController(t ControllerType) Controller {
 			Current:             (2e6) / 2,
 			AutoTuningThreshold: 300.0,
 			AutoTuningActive:    false,
+			IntervalBased:       false,
 			Metrics:             i.metrics,
+			MetricLabel:         "dimmer",
+		}
+		out.scaler = &brownout.PIDController{
+			MaxOut:        6,
+			MinOut:        1,
+			P:             0.0015,
+			I:             0.00001,
+			IntervalBased: true,
+			Metrics:       i.metrics,
+			MetricLabel:   "scaler",
 		}
 		return out
 	}
@@ -125,6 +137,7 @@ type controller struct {
 	lastUpdate        time.Time
 	lastScalingUpdate time.Time
 	scalingInterval   time.Duration
+	scalingHysteris   time.Duration
 	needsReload       bool
 	logger            types.Logger
 	targets           map[string]TargetConfig
@@ -132,7 +145,8 @@ type controller struct {
 	socket            string
 	metrics           types.Metrics
 	currConfig        *config
-	control           brownout.Controller
+	dimmer            brownout.Controller
+	scaler            brownout.Controller
 }
 
 // Coordinates metric collection and updates the config with any necessary action
@@ -150,38 +164,28 @@ func (c *controller) Update(backend *hatypes.Backend) {
 		return
 	}
 
-	c.execApplyACL(backend, c.getAdjustment(backend.Name, stats))
+	c.execApplyACL(backend, c.getDimmerAdjustment(backend.Name, stats))
 	if c.needsReload {
 		c.logger.InfoV(2, "Queued updates to be written to disks on next reload")
 		c.needsReload = false
 	}
 	c.lastUpdate = time.Now()
 
-	if c.lastScalingUpdate.Add(c.scalingInterval).After(time.Now()) {
+	// If we have scaled recently, we need to wait before scaling again
+	if c.lastScalingUpdate.Add(c.scalingHysteris).After(time.Now()) || c.lastScalingUpdate.Add(c.scalingInterval).
+		After(time.Now()) {
 		return
 	}
 
 	c.logger.Info("In the Update, the targets are %+v", c.targets)
 
-	// TODO: Fix hardcoded values, add filtering (i.e. if the last 3 controller updates were low --> scale)
 	for _, config := range c.targets {
 		c.logger.Info("Considering deployment %q for scaling", config.DeploymentName)
-		if c.currConfig.brownout.Rates[config.Paths[0]] < 500 {
-			// We are under load and may consider scaling out
-			if c.currConfig.brownout.UpdateDeployments[config.DeploymentName] < config.MaxReplicas {
-				// We have room for extra replicas
-				c.currConfig.brownout.UpdateDeployments[config.DeploymentName] += 1
-				c.logger.Info("Scaled deployment %q to %d replicas", config.DeploymentName,
-					c.currConfig.brownout.UpdateDeployments[config.DeploymentName])
-			}
-		} else if c.currConfig.brownout.Rates[config.Paths[0]] > 999 {
-			// We are no longer under load and may consider scaling down
-			if c.currConfig.brownout.UpdateDeployments[config.DeploymentName] > config.TargetReplicas {
-				// We have more replicas provisioned then our target
-				c.currConfig.brownout.UpdateDeployments[config.DeploymentName] -= 1
-				c.logger.Info("Scaled deployment %q to %d replicas", config.DeploymentName, c.currConfig.brownout.UpdateDeployments[config.DeploymentName])
-			}
-		}
+		c.currConfig.brownout.UpdateDeployments[config.DeploymentName] =
+			c.getScalerAdjustment(c.currConfig.brownout.Rates[config.Paths[0]])
+
+		c.logger.Info("Set deployment %q to %d replicas", config.DeploymentName,
+			c.currConfig.brownout.UpdateDeployments[config.DeploymentName])
 	}
 
 	c.UpdateDeployments()
@@ -197,27 +201,27 @@ func (c *controller) execApplyACL(backend *hatypes.Backend, adjustment int) {
 	}
 }
 
+// Given the current error, returns the necessary number of replicas
+func (c *controller) getScalerAdjustment(current int) int {
+	c.scaler.SetGoal(c.dimmer.GetTargetValue())
+	return int(c.scaler.Next(float64(current), time.Now().Sub(c.lastScalingUpdate)))
+}
+
 // Given the current error, returns the necessary adjustment for brownout ACL and rate limiting
-func (c *controller) getAdjustment(backend string, stats map[string]string) int {
+func (c *controller) getDimmerAdjustment(backend string, stats map[string]string) int {
 	// The PID controller
 	response := 0
 
-	//c.logger.InfoV(2, "Targets for backend are: %v", c.targets[backend].Targets)
-	//c.logger.InfoV(2, "About to go into the loop for %d iterations", len(c.targets[backend].Targets))
 	for metric, target := range c.targets[backend].Targets {
-		//c.logger.InfoV(2, "Found a target for %q, which is %d", metric, target)
 		if current, ok := stats[metric]; ok {
-			//c.logger.InfoV(2, "Stats have the metric with value %q", current)
 			cur, err := strconv.ParseFloat(current, 64)
 			if err != nil {
 				c.logger.Error("Failed to parse an int from %q", current)
 				continue
 			}
-			// This is ok, as we only have one variable we control
-			// If extended to multivariable control, this needs to be rewritten
 			// Casting to int, as this directly corresponds to the rate for all non-essential endpoints
-			c.control.SetGoal(float64(target))
-			response = int(c.control.NextAutoTuned(cur, time.Now().Sub(c.lastUpdate)))
+			c.dimmer.SetGoal(float64(target))
+			response = int(c.dimmer.NextAutoTuned(cur, time.Now().Sub(c.lastUpdate)))
 		}
 	}
 	return response

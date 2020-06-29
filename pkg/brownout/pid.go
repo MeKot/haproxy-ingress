@@ -12,6 +12,7 @@ type Controller interface {
 	Next(current float64, lastUpdate time.Duration) float64
 	NextAutoTuned(current float64, lastUpdate time.Duration) float64
 	SetGoal(newGoal float64)
+	GetTargetValue() float64
 }
 
 type PIDController struct {
@@ -22,8 +23,10 @@ type PIDController struct {
 	MinOut            float64
 	MaxOut            float64
 	AutoTuningEnabled bool
+	IntervalBased     bool
 
-	Metrics types.Metrics
+	Metrics     types.Metrics
+	MetricLabel string
 
 	// Auto-Tuning things
 	Current             float64
@@ -75,11 +78,11 @@ func (c *PIDController) NextAutoTuned(current float64, lastUpdate time.Duration)
 	c.integralSum = c.Current - proportionalAction
 
 	if c.Metrics != nil {
-		c.Metrics.SetControllerParameterValue(c.Ti, "Ti")
-		c.Metrics.SetControllerParameterValue(c.P, "K")
-		c.Metrics.SetControllerActionValue(c.P*e, "proportional")
-		c.Metrics.SetControllerActionValue(c.integralSum, "integral_sum")
-		c.Metrics.SetControllerResponse(e)
+		c.Metrics.SetControllerParameterValue(c.Ti, "Ti", c.MetricLabel)
+		c.Metrics.SetControllerParameterValue(c.P, "K", c.MetricLabel)
+		c.Metrics.SetControllerActionValue(c.P*e, "proportional", c.MetricLabel)
+		c.Metrics.SetControllerActionValue(c.integralSum, "integral_sum", c.MetricLabel)
+		c.Metrics.SetControllerResponse(e, c.MetricLabel)
 	}
 
 	return c.Current
@@ -128,6 +131,9 @@ func (c *PIDController) autoTune(e float64, lastUpdate time.Duration, current fl
 
 func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 {
 	e := c.goal - current
+	if c.IntervalBased && math.Abs(e) < math.Abs(c.OxMax-c.OxMin)/10 {
+		return c.Current
+	}
 	dt := lastUpdate.Seconds()
 
 	c.integralSum += e * dt * c.I
@@ -140,24 +146,25 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 	}
 	out := c.P*e + c.integralSum
 
-	if out > c.MaxOut {
-		glog.Info("Result is capped")
-		return c.MaxOut
-	} else if out < c.MinOut {
-		glog.Info("Result is floored")
-		return c.MinOut
+	if c.Metrics != nil {
+		c.Metrics.SetControllerActionValue(c.P*e, "proportional", c.MetricLabel)
+		c.Metrics.SetControllerActionValue(c.integralSum, "integral_sum", c.MetricLabel)
+		c.Metrics.SetControllerResponse(e, c.MetricLabel)
 	}
 
-	if c.Metrics != nil {
-		c.Metrics.SetControllerActionValue(c.P*e, "proportional")
-		c.Metrics.SetControllerActionValue(c.integralSum, "integral_sum")
-		c.Metrics.SetControllerResponse(e)
-	}
-	return out
+	c.Current = out
+	c.clampOutput()
+
+	return c.Current
 }
 
 func (c *PIDController) SetGoal(newGoal float64) {
 	c.goal = newGoal
+}
+
+func (c *PIDController) GetTargetValue() float64 {
+	// Something in the ballpark of 750, which is the target value for the dimmer
+	return ((c.MaxOut-c.MinOut)*3)/4 + c.MinOut
 }
 
 func (c *PIDController) clampOutput() {
