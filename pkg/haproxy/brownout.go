@@ -123,7 +123,7 @@ func (i *instance) GetController(t ControllerType) Controller {
 			MaxOut:            6,
 			MinOut:            1,
 			P:                 0.0025,
-			I:                 0.00001,
+			Ti:                350,
 			IntervalBased:     true,
 			AutoTuningEnabled: false,
 			AutoTuningActive:  false,
@@ -189,7 +189,7 @@ func (c *controller) Update(backend *hatypes.Backend) {
 		c.currConfig.brownout.UpdateDeployments[config.DeploymentName] =
 			c.getScalerAdjustment(c.currConfig.brownout.Rates[config.Paths[0]])
 
-		c.logger.Info("Set deployment %q to %d replicas", config.DeploymentName,
+		c.logger.Info("Set deployment %q to %f replicas", config.DeploymentName,
 			c.currConfig.brownout.UpdateDeployments[config.DeploymentName])
 	}
 
@@ -208,6 +208,7 @@ func (c *controller) execApplyACL(backend *hatypes.Backend, adjustment int) {
 
 // Given the current error, returns the necessary number of replicas
 func (c *controller) getScalerAdjustment(current int) float64 {
+	c.logger.Info("Scaler goal is %f, current is %d", c.dimmer.GetTargetValue(), current)
 	c.scaler.SetGoal(c.dimmer.GetTargetValue())
 	return c.scaler.NextAutoTuned(float64(current), time.Now().Sub(c.lastScalingUpdate))
 }
