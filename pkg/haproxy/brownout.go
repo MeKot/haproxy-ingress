@@ -103,7 +103,7 @@ func (i *instance) GetController(t ControllerType) Controller {
 			AutoTuningEnabled:   false,
 			MaxOut:              1000,
 			MinOut:              1,
-			P:                   0.5,
+			P:                   -0.5,
 			I:                   0.1,
 			Ti:                  10,
 			PmAutotuning:        60.0,
