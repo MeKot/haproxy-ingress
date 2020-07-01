@@ -67,7 +67,7 @@ func (c *PIDController) NextAutoTuned(current float64, lastUpdate time.Duration)
 	if !c.AutoTuningActive {
 		// Fixing the sign of the PI action
 		glog.Info("Normal control loop, autotuning disabled")
-		c.P = (e / math.Abs(e)) * math.Abs(c.P)
+		//c.P = (e / math.Abs(e)) * math.Abs(c.P)
 
 		proportionalAction = c.P * e
 
