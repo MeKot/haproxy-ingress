@@ -50,6 +50,9 @@ func (c *PIDController) NextAutoTuned(current float64, lastUpdate time.Duration)
 	c.stepCounter++
 	e := c.goal - current
 
+	if c.IntervalBased && math.Abs(e) < math.Abs(c.OxMax-c.OxMin)/10 {
+		e = 0
+	}
 	if !c.AutoTuningActive && math.Abs(e) > c.AutoTuningThreshold && c.AutoTuningEnabled {
 		glog.Info("Activating and resetting auto-tuning")
 		c.AutoTuningActive = true
@@ -91,9 +94,7 @@ func (c *PIDController) NextAutoTuned(current float64, lastUpdate time.Duration)
 func (c *PIDController) autoTune(e float64, lastUpdate time.Duration, current float64) {
 	glog.Info("AUTOTUNING!!!")
 	atRelays := -1
-	if c.IntervalBased && math.Abs(e) < math.Abs(c.OxMax-c.OxMin)/10 {
-		e = 0
-	}
+
 	if e > 0 {
 		c.Current += c.DuAutotuning
 		atRelays = 1
