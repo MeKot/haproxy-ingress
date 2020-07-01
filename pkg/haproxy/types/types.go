@@ -45,7 +45,7 @@ type Brownout struct {
 	Rates               map[string]int
 	Rules               string
 	ACLMapPath          string
-	UpdateDeployments   map[string]int
+	UpdateDeployments   map[string]float64
 	Client              clientset.Interface
 }
 

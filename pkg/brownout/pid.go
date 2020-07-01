@@ -50,7 +50,8 @@ func (c *PIDController) NextAutoTuned(current float64, lastUpdate time.Duration)
 	c.stepCounter++
 	e := c.goal - current
 
-	if c.IntervalBased && math.Abs(e) < math.Abs(c.OxMax-c.OxMin)/10 {
+	if c.IntervalBased && math.Abs(e) < math.Abs(c.OxMax-c.OxMin)/7 {
+		glog.Info("Resetting the error to 0")
 		e = 0
 	}
 	if !c.AutoTuningActive && math.Abs(e) > c.AutoTuningThreshold && c.AutoTuningEnabled {

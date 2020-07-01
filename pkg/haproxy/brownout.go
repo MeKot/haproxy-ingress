@@ -66,12 +66,12 @@ func (i *instance) GetController(t ControllerType) Controller {
 		v, ok := i.curConfig.Brownout().UpdateDeployments[value.DeploymentName]
 
 		if ok {
-			i.logger.Info("Deployment %q has %d replicas", value.DeploymentName, v)
+			i.logger.Info("Deployment %q has %f replicas", value.DeploymentName, v)
 		}
 
 		if !ok {
 			// Set to target replicas, so we update them on the next scalability action
-			i.curConfig.Brownout().UpdateDeployments[value.DeploymentName] = value.TargetReplicas
+			i.curConfig.Brownout().UpdateDeployments[value.DeploymentName] = float64(value.TargetReplicas)
 			i.logger.Info("Det the number of replicas for %q at %d", value.DeploymentName, value.TargetReplicas)
 		}
 	}
@@ -127,6 +127,7 @@ func (i *instance) GetController(t ControllerType) Controller {
 			IntervalBased:     true,
 			AutoTuningEnabled: false,
 			AutoTuningActive:  false,
+			Current:           1,
 			Metrics:           i.metrics,
 			MetricLabel:       "scaler",
 		}
@@ -206,9 +207,9 @@ func (c *controller) execApplyACL(backend *hatypes.Backend, adjustment int) {
 }
 
 // Given the current error, returns the necessary number of replicas
-func (c *controller) getScalerAdjustment(current int) int {
+func (c *controller) getScalerAdjustment(current int) float64 {
 	c.scaler.SetGoal(c.dimmer.GetTargetValue())
-	return int(c.scaler.NextAutoTuned(float64(current), time.Now().Sub(c.lastScalingUpdate)))
+	return c.scaler.NextAutoTuned(float64(current), time.Now().Sub(c.lastScalingUpdate))
 }
 
 // Given the current error, returns the necessary adjustment for brownout ACL and rate limiting
@@ -318,10 +319,11 @@ func (c *controller) UpdateDeployments() {
 			continue
 		}
 
-		c.logger.Info("Got deployment %q, it has %d replicas", depl, int(*d.Spec.Replicas))
+		desired := c.getReplicaCount(int(*d.Spec.Replicas), repl)
+		c.logger.Info("getReplicaCount returned %d", desired)
 
-		if int(*d.Spec.Replicas) != repl {
-			*d.Spec.Replicas = int32(repl)
+		if int(*d.Spec.Replicas) != desired {
+			*d.Spec.Replicas = int32(desired)
 			_, err = c.currConfig.brownout.Client.AppsV1().Deployments("default").Update(d)
 
 			if err != nil {
@@ -335,4 +337,16 @@ func (c *controller) UpdateDeployments() {
 
 	}
 
+}
+
+func (c *controller) getReplicaCount(current int, scaler float64) int {
+	diff := float64(current) - scaler
+	c.logger.Info("Current is %d, scaler is %f", current, scaler)
+	if diff >= 0.6 {
+		return int(scaler)
+	} else if diff <= -0.6 {
+		return int(scaler + 0.5)
+	} else {
+		return current
+	}
 }
