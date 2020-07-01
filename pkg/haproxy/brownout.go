@@ -123,7 +123,7 @@ func (i *instance) GetController(t ControllerType) Controller {
 			MaxOut:            6,
 			MinOut:            1,
 			P:                 0.0025,
-			Ti:                350,
+			Ti:                1000,
 			IntervalBased:     true,
 			AutoTuningEnabled: false,
 			AutoTuningActive:  false,
