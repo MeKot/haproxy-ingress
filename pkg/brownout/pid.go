@@ -91,6 +91,9 @@ func (c *PIDController) NextAutoTuned(current float64, lastUpdate time.Duration)
 func (c *PIDController) autoTune(e float64, lastUpdate time.Duration, current float64) {
 	glog.Info("AUTOTUNING!!!")
 	atRelays := -1
+	if c.IntervalBased && math.Abs(e) < math.Abs(c.OxMax-c.OxMin)/10 {
+		e = 0
+	}
 	if e > 0 {
 		c.Current += c.DuAutotuning
 		atRelays = 1
@@ -132,7 +135,7 @@ func (c *PIDController) autoTune(e float64, lastUpdate time.Duration, current fl
 func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 {
 	e := c.goal - current
 	if c.IntervalBased && math.Abs(e) < math.Abs(c.OxMax-c.OxMin)/10 {
-		return c.Current
+		e = 0
 	}
 	dt := lastUpdate.Seconds()
 
@@ -146,14 +149,14 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 	}
 	out := c.P*e + c.integralSum
 
+	c.Current = out
+	c.clampOutput()
+
 	if c.Metrics != nil {
 		c.Metrics.SetControllerActionValue(c.P*e, "proportional", c.MetricLabel)
 		c.Metrics.SetControllerActionValue(c.integralSum, "integral_sum", c.MetricLabel)
 		c.Metrics.SetControllerResponse(e, c.MetricLabel)
 	}
-
-	c.Current = out
-	c.clampOutput()
 
 	return c.Current
 }

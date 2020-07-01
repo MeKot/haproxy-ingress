@@ -100,7 +100,7 @@ func (i *instance) GetController(t ControllerType) Controller {
 	switch t {
 	case PID:
 		out.dimmer = &brownout.PIDController{
-			AutoTuningEnabled:   true,
+			AutoTuningEnabled:   false,
 			MaxOut:              1000,
 			MinOut:              1,
 			P:                   0.5,
@@ -118,15 +118,17 @@ func (i *instance) GetController(t ControllerType) Controller {
 			MetricLabel:         "dimmer",
 		}
 		out.scaler = &brownout.PIDController{
-			OxMax:         1000,
-			OxMin:         1,
-			MaxOut:        6,
-			MinOut:        1,
-			P:             0.0015,
-			I:             0.00001,
-			IntervalBased: true,
-			Metrics:       i.metrics,
-			MetricLabel:   "scaler",
+			OxMax:             1000,
+			OxMin:             1,
+			MaxOut:            6,
+			MinOut:            1,
+			P:                 0.0025,
+			I:                 0.00001,
+			IntervalBased:     true,
+			AutoTuningEnabled: false,
+			AutoTuningActive:  false,
+			Metrics:           i.metrics,
+			MetricLabel:       "scaler",
 		}
 		return out
 	}
@@ -206,7 +208,7 @@ func (c *controller) execApplyACL(backend *hatypes.Backend, adjustment int) {
 // Given the current error, returns the necessary number of replicas
 func (c *controller) getScalerAdjustment(current int) int {
 	c.scaler.SetGoal(c.dimmer.GetTargetValue())
-	return int(c.scaler.Next(float64(current), time.Now().Sub(c.lastScalingUpdate)))
+	return int(c.scaler.NextAutoTuned(float64(current), time.Now().Sub(c.lastScalingUpdate)))
 }
 
 // Given the current error, returns the necessary adjustment for brownout ACL and rate limiting
