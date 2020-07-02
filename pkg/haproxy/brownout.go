@@ -103,7 +103,7 @@ func (i *instance) GetController(t ControllerType) Controller {
 			AutoTuningEnabled:   false,
 			MaxOut:              1000,
 			MinOut:              1,
-			P:                   0.01,
+			P:                   0.05,
 			Ti:                  3,
 			PmAutotuning:        60.0,
 			DuAutotuning:        100,
@@ -168,7 +168,7 @@ func (c *controller) Update(backend *hatypes.Backend) {
 		return
 	}
 
-	c.execApplyACL(backend, c.getDimmerAdjustment(backend.Name, stats))
+	//c.execApplyACL(backend, c.getDimmerAdjustment(backend.Name, stats))
 	if c.needsReload {
 		c.logger.InfoV(2, "Queued updates to be written to disks on next reload")
 		c.needsReload = false
@@ -185,14 +185,14 @@ func (c *controller) Update(backend *hatypes.Backend) {
 
 	for _, config := range c.targets {
 		c.logger.Info("Considering deployment %q for scaling", config.DeploymentName)
-		c.currConfig.brownout.UpdateDeployments[config.DeploymentName] =
-			c.getScalerAdjustment(c.currConfig.brownout.Rates[config.Paths[0]])
+		//c.currConfig.brownout.UpdateDeployments[config.DeploymentName] =
+		//	c.getScalerAdjustment(c.currConfig.brownout.Rates[config.Paths[0]])
 
 		c.logger.Info("Set deployment %q to %f replicas", config.DeploymentName,
 			c.currConfig.brownout.UpdateDeployments[config.DeploymentName])
 	}
 
-	c.UpdateDeployments()
+	//c.UpdateDeployments()
 }
 
 func (c *controller) execApplyACL(backend *hatypes.Backend, adjustment int) {
