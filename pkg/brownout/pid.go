@@ -50,10 +50,6 @@ func (c *PIDController) NextAutoTuned(current float64, lastUpdate time.Duration)
 	c.stepCounter++
 	e := c.goal - current
 
-	if c.IntervalBased && math.Abs(e) < math.Abs(c.OxMax-c.OxMin)/7 {
-		glog.Info("Resetting the error to 0")
-		e = 0
-	}
 	if !c.AutoTuningActive && math.Abs(e) > c.AutoTuningThreshold && c.AutoTuningEnabled {
 		glog.Info("Activating and resetting auto-tuning")
 		c.AutoTuningActive = true
@@ -69,11 +65,15 @@ func (c *PIDController) NextAutoTuned(current float64, lastUpdate time.Duration)
 		glog.Info("Normal control loop, autotuning disabled")
 		//c.P = (e / math.Abs(e)) * math.Abs(c.P)
 
-		proportionalAction = c.P * e
+		if c.IntervalBased && math.Abs(e) < math.Abs(c.OxMax-c.OxMin)/4 {
+			glog.Info("Skipping this iteration because we are within the target range")
+		} else {
+			proportionalAction = c.P * e
 
-		// Calculating the PI action
-		c.Current = proportionalAction + c.integralSum + (c.P*(lastUpdate.Seconds()/c.Ti))*e
-		glog.Info(fmt.Sprintf("Poportional action is %f and controller response is %f", proportionalAction, c.Current))
+			// Calculating the PI action
+			c.Current = proportionalAction + c.integralSum + (c.P*(lastUpdate.Seconds()/c.Ti))*e
+			glog.Info(fmt.Sprintf("Poportional action is %f and controller response is %f", proportionalAction, c.Current))
+		}
 	} else {
 		c.autoTune(e, lastUpdate, current)
 	}
@@ -169,7 +169,7 @@ func (c *PIDController) SetGoal(newGoal float64) {
 
 func (c *PIDController) GetTargetValue() float64 {
 	// Something in the ballpark of 750, which is the target value for the dimmer
-	return ((c.MaxOut-c.MinOut)*3)/4 + c.MinOut
+	return ((c.MaxOut-c.MinOut)*3)/5 + c.MinOut
 }
 
 func (c *PIDController) clampOutput() {
