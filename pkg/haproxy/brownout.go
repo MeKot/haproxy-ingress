@@ -192,7 +192,7 @@ func (c *controller) Update(backend *hatypes.Backend) {
 			c.currConfig.brownout.UpdateDeployments[config.DeploymentName])
 	}
 
-	//c.UpdateDeployments()
+	c.UpdateDeployments()
 }
 
 func (c *controller) execApplyACL(backend *hatypes.Backend, adjustment int) {
@@ -322,17 +322,17 @@ func (c *controller) UpdateDeployments() {
 		desired := c.getReplicaCount(int(*d.Spec.Replicas), repl)
 		c.logger.Info("getReplicaCount returned %d", desired)
 
-		if int(*d.Spec.Replicas) != desired {
-			*d.Spec.Replicas = int32(desired)
-			_, err = c.currConfig.brownout.Client.AppsV1().Deployments("default").Update(d)
+		//if int(*d.Spec.Replicas) != desired {
+		//*d.Spec.Replicas = int32(desired)
+		//_, err = c.currConfig.brownout.Client.AppsV1().Deployments("default").Update(d)
 
-			if err != nil {
-				c.logger.Error("error updating the deployment %q", depl)
-				c.logger.Error(err.Error())
-			}
+		//if err != nil {
+		//	c.logger.Error("error updating the deployment %q", depl)
+		//	c.logger.Error(err.Error())
+		//}
 
-			c.lastScalingUpdate = time.Now()
-		}
+		//c.lastScalingUpdate = time.Now()
+		//}
 		c.metrics.SetBackendNumberOfPods(depl, *d.Spec.Replicas)
 
 	}
