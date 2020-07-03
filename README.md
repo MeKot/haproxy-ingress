@@ -6,3 +6,8 @@ implementation for [HAProxy](http://www.haproxy.org/) loadbalancer extended with
 The original [README](https://github.com/MeKot/haproxy-ingress/blob/feature/brownout/README_OLD.md) for the HAProxy-Ingress Controller
 
 # What this is 
+
+This is a modified version of the HAProxy-Ingress controller that implements the brownout paradigm. It 
+extends the paradigm further by combining it with a replication controller. 
+
+## This is a prototype that was developed for [QUDOS2020](http://2020.qudos-workshop.org/call_for_papers/)
