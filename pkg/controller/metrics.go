@@ -237,8 +237,8 @@ func (m *metrics) IncCertSigningOutdated(domains string, success bool) {
 	m.certSigningCounter.WithLabelValues(domains, "outdated", strconv.FormatBool(success)).Inc()
 }
 
-func (m *metrics) SetBrownOutFeatureStatus(feature string, currentValue float64) {
-	m.backendFeaturesDisabled.WithLabelValues(feature).Set(currentValue)
+func (m *metrics) SetBrownOutFeatureStatus(feature string, currentValue float64, deployment string) {
+	m.backendFeaturesDisabled.WithLabelValues(feature, deployment).Set(currentValue)
 }
 
 func (m *metrics) SetBackendResponseTime(backend string, duration time.Duration) {
@@ -249,14 +249,14 @@ func (m *metrics) SetBackendNumberOfPods(backend string, pods int32) {
 	m.backendNumberOfPods.WithLabelValues(backend).Set(float64(pods))
 }
 
-func (m *metrics) SetControllerResponse(response float64, label string) {
-	m.controlError.WithLabelValues(label).Set(response)
+func (m *metrics) SetControllerResponse(response float64, label string, deployment string) {
+	m.controlError.WithLabelValues(label, deployment).Set(response)
 }
 
-func (m *metrics) SetControllerParameterValue(pvalue float64, param string, label string) {
-	m.controllerParameter.WithLabelValues(param, label).Set(pvalue)
+func (m *metrics) SetControllerParameterValue(pvalue float64, param string, label string, deployment string) {
+	m.controllerParameter.WithLabelValues(param, label, deployment).Set(pvalue)
 }
 
-func (m *metrics) SetControllerActionValue(ivalue float64, action string, label string) {
-	m.controllerActions.WithLabelValues(action, label).Set(ivalue)
+func (m *metrics) SetControllerActionValue(ivalue float64, action string, label string, deployment string) {
+	m.controllerActions.WithLabelValues(action, label, deployment).Set(ivalue)
 }

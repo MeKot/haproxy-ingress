@@ -36,10 +36,10 @@ type Metrics interface {
 	IncCertSigningOutdated(domains string, success bool)
 
 	// Brownout-specific metrics
-	SetBrownOutFeatureStatus(feature string, currentValue float64)
+	SetBrownOutFeatureStatus(feature string, currentValue float64, deployment string)
 	SetBackendResponseTime(backend string, duration time.Duration)
 	SetBackendNumberOfPods(backend string, pods int32)
-	SetControllerResponse(response float64, label string)
-	SetControllerParameterValue(ivalue float64, param string, label string)
-	SetControllerActionValue(pvalue float64, action string, label string)
+	SetControllerResponse(response float64, label string, deployment string)
+	SetControllerParameterValue(ivalue float64, param string, label string, deployment string)
+	SetControllerActionValue(pvalue float64, action string, label string, deployment string)
 }

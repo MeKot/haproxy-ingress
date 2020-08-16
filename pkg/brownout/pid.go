@@ -30,9 +30,9 @@ type Autotuner struct {
 
 type PID struct {
 	current     float64
-	P           float64
+	P           float64 `json:"p"`
 	integralSum float64
-	Ti          float64 // Integral time
+	Ti          float64 `json:"ti"`
 	goal        float64
 }
 
@@ -42,16 +42,29 @@ type Limits struct {
 }
 
 type PIDController struct {
-	OutLimits         Limits
-	OxLimits          Limits
+	OutLimits         *Limits
+	OxLimits          *Limits
 	AutoTuningEnabled bool
 	IntervalBased     bool
 
-	Metrics     types.Metrics
-	MetricLabel string
+	Metrics        types.Metrics
+	MetricLabel    string
+	DeploymentName string
 
 	autoTuner Autotuner
 	pid       PID
+}
+
+func CreateLimits(max float64, min float64) *Limits {
+	return &Limits{
+		max: max,
+		min: min,
+	}
+}
+
+func (pid *PID) Initialise(current float64, goal float64) {
+	pid.current = current
+	pid.goal = goal
 }
 
 func (c *PIDController) SetController(newPID PID) {
@@ -77,6 +90,7 @@ func (c *PIDController) normalControlLoop(e float64, lastUpdate time.Duration) f
 	glog.Info("Normal control loop, autotuning disabled")
 	//c.P = (e / math.Abs(e)) * math.Abs(c.P)
 	proportionalAction := 0.0
+	glog.Info(fmt.Sprintf("The current object is %+v", c))
 
 	if c.IntervalBased && math.Abs(e) < math.Abs(c.OxLimits.max-c.OxLimits.min)/4 {
 		glog.Info("Skipping this iteration because we are within the target range")
@@ -95,13 +109,13 @@ func (c *PIDController) normalControlLoop(e float64, lastUpdate time.Duration) f
 }
 
 // Push control loop metrics and controller actions to Prometheus
-func (c *PIDController) pushMetrics(error float64) {
+func (c *PIDController) pushMetrics(error float64, deployment string) {
 	if c.Metrics != nil {
-		c.Metrics.SetControllerParameterValue(c.pid.Ti, "Ti", c.MetricLabel)
-		c.Metrics.SetControllerParameterValue(c.pid.P, "K", c.MetricLabel)
-		c.Metrics.SetControllerActionValue(c.pid.P*error, "proportional", c.MetricLabel)
-		c.Metrics.SetControllerActionValue(c.pid.integralSum, "integral_sum", c.MetricLabel)
-		c.Metrics.SetControllerResponse(error, c.MetricLabel)
+		c.Metrics.SetControllerParameterValue(c.pid.Ti, "Ti", c.MetricLabel, deployment)
+		c.Metrics.SetControllerParameterValue(c.pid.P, "K", c.MetricLabel, deployment)
+		c.Metrics.SetControllerActionValue(c.pid.P*error, "proportional", c.MetricLabel, deployment)
+		c.Metrics.SetControllerActionValue(c.pid.integralSum, "integral_sum", c.MetricLabel, deployment)
+		c.Metrics.SetControllerResponse(error, c.MetricLabel, deployment)
 	} else {
 		glog.Warning("Metrics are null inside the controller")
 	}
@@ -123,7 +137,7 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 	}
 
 	c.clampOutput()
-	c.pushMetrics(e)
+	c.pushMetrics(e, c.DeploymentName)
 
 	// Anti-windup
 	c.pid.integralSum = c.pid.current - proportionalAction
