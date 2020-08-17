@@ -13,6 +13,7 @@ type Controller interface {
 	SetGoal(newGoal float64)
 	GetTargetValue() float64
 	SetController(controller PID)
+	UpdateControllerParams(newParams PID)
 	SetAutoTuner(tuner Autotuner)
 }
 
@@ -69,6 +70,11 @@ func (pid *PID) Initialise(current float64, goal float64) {
 
 func (c *PIDController) SetController(newPID PID) {
 	c.pid = newPID
+}
+
+func (c *PIDController) UpdateControllerParams(newParams PID) {
+	c.pid.P = newParams.P
+	c.pid.Ti = newParams.Ti
 }
 
 func (c *PIDController) SetAutoTuner(tuner Autotuner) {
@@ -193,7 +199,7 @@ func (c *PIDController) SetGoal(newGoal float64) {
 }
 
 func (c *PIDController) GetTargetValue() float64 {
-	// Something in the ballpark of 750, which is the target value for the dimmer
+	// Something in the ballpark of 600, which is the target value for the dimmer
 	return ((c.OutLimits.max-c.OutLimits.min)*3)/5 + c.OutLimits.min
 }
 

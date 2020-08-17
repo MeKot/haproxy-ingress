@@ -76,7 +76,7 @@ func (i *instance) GetController() Controller {
 			r, ok := i.curConfig.Brownout().Rates[path]
 			if !ok {
 				i.logger.Info("Adding %q", path)
-				i.curConfig.Brownout().Rates[path] = 500
+				i.curConfig.Brownout().Rates[path] = configuration.RequestLimit
 				continue
 			}
 			i.logger.Info("Found %q with set rate %d", path, r)
@@ -100,6 +100,7 @@ func (i *instance) GetController() Controller {
 		// Reusing the controller that has already been initialised, just updating some values
 		i.brownout.(*controller).currConfig = i.curConfig.(*config)
 		i.brownout.(*controller).targets = c.Targets
+		i.brownout.(*controller).updateControllers()
 		return i.brownout
 	}
 
@@ -124,6 +125,14 @@ func (i *instance) GetController() Controller {
 		out.createDimmerController(conf, deployment)
 	}
 	return out
+}
+
+func (c *controller) updateControllers() {
+	c.logger.Info("UPDATING CONTROLLER PARAMS FROM CONFIG MAP")
+	for depl, conf := range c.targets {
+		c.dimmers[depl].UpdateControllerParams(conf.DimmerPID)
+		c.scalers[depl].UpdateControllerParams(conf.ScalerPID)
+	}
 }
 
 func (c *controller) createDimmerController(conf TargetConfig, deployment string) {
@@ -281,7 +290,6 @@ func (c *controller) recordResponseTime(backend string, stats map[string]string)
 		return
 	}
 
-	c.logger.Info(fmt.Sprintf("Response time for %q is %d", backend, rtime))
 	c.metrics.SetBackendResponseTime(backend, rtime)
 
 }
