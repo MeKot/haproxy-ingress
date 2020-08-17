@@ -17,28 +17,48 @@ import (
 
 type ControllerType string
 
-const (
-	PID ControllerType = "PID"
-)
-
 type Controller interface {
 	Update(backend *hatypes.Backend)
-	UpdateDeployments()
 }
 
+// Represents the per-target configuration, where target is the deployment that
+// is scaled browned out
 type TargetConfig struct {
-	Paths          []string         `json:"paths"`
-	Targets        map[string]int64 `json:"targets"`
-	TargetReplicas int              `json:"target_replicas"`
-	MaxReplicas    int              `json:"max_replicas"`
-	DeploymentName string           `json:"deployment_name"`
+	Paths               []string     `json:"paths"`
+	RequestLimit        int          `josn:"request_limit"`
+	Target              string       `json:"target"`
+	TargetValue         int          `json:"target_value"`
+	TargetReplicas      int          `json:"target_replicas"`
+	MaxReplicas         int          `json:"max_replicas"`
+	DeploymentNamespace string       `json:"deployment_namespace"`
+	DeploymentName      string       `json:"deployment_name"`
+	ScalerPID           brownout.PID `json:"scaler_pid"`
+	DimmerPID           brownout.PID `json:"dimmer_pid"`
 }
 
 type BrownoutConfig struct {
 	Targets map[string]TargetConfig `json:"targets"`
 }
 
-func (i *instance) GetController(t ControllerType) Controller {
+// controller used to perform runtime updates
+type controller struct {
+	reloadInterval    time.Duration
+	lastUpdate        time.Time
+	lastScalingUpdate time.Time
+	scalingInterval   time.Duration
+	scalingHysteris   time.Duration
+	needsReload       bool
+	logger            types.Logger
+	targets           map[string]TargetConfig
+	cmd               func(socket string, observer func(duration time.Duration), commands ...string) ([]string, error)
+	socket            string
+	metrics           types.Metrics
+	currConfig        *config
+	dimmers           map[string]brownout.Controller
+	scalers           map[string]brownout.Controller
+}
+
+func (i *instance) GetController() Controller {
 	var c BrownoutConfig
 	err := json.Unmarshal([]byte(i.curConfig.Brownout().Rules), &c)
 
@@ -49,10 +69,10 @@ func (i *instance) GetController(t ControllerType) Controller {
 
 	i.logger.Info("Unmarshalled to %+v", c)
 
-	for _, value := range c.Targets {
+	for _, configuration := range c.Targets {
 		i.logger.Info("Initialising the global rates map")
 		// Default rate limit is 100000 requests per minute
-		for _, path := range value.Paths {
+		for _, path := range configuration.Paths {
 			r, ok := i.curConfig.Brownout().Rates[path]
 			if !ok {
 				i.logger.Info("Adding %q", path)
@@ -63,16 +83,16 @@ func (i *instance) GetController(t ControllerType) Controller {
 		}
 
 		// Update the scaling parameters
-		v, ok := i.curConfig.Brownout().UpdateDeployments[value.DeploymentName]
+		v, ok := i.curConfig.Brownout().UpdateDeployments[configuration.DeploymentName]
 
 		if ok {
-			i.logger.Info("Deployment %q has %f replicas", value.DeploymentName, v)
+			i.logger.Info("Deployment %q has %f replicas", configuration.DeploymentName, v)
 		}
 
 		if !ok {
 			// Set to target replicas, so we update them on the next scalability action
-			i.curConfig.Brownout().UpdateDeployments[value.DeploymentName] = float64(value.TargetReplicas)
-			i.logger.Info("Det the number of replicas for %q at %d", value.DeploymentName, value.TargetReplicas)
+			i.curConfig.Brownout().UpdateDeployments[configuration.DeploymentName] = float64(configuration.TargetReplicas)
+			i.logger.Info("Det the number of replicas for %q at %d", configuration.DeploymentName, configuration.TargetReplicas)
 		}
 	}
 
@@ -96,61 +116,44 @@ func (i *instance) GetController(t ControllerType) Controller {
 		socket:            i.curConfig.Global().AdminSocket,
 		metrics:           i.metrics,
 		currConfig:        i.curConfig.(*config),
+		dimmers:           make(map[string]brownout.Controller),
+		scalers:           make(map[string]brownout.Controller),
 	}
-	switch t {
-	case PID:
-		out.dimmer = &brownout.PIDController{
-			AutoTuningEnabled:   false,
-			MaxOut:              1000,
-			MinOut:              1,
-			P:                   0.01,
-			Ti:                  3,
-			PmAutotuning:        60.0,
-			DuAutotuning:        100,
-			OxMax:               -1e6,
-			OxMin:               1e6,
-			Current:             1000,
-			AutoTuningThreshold: 300.0,
-			AutoTuningActive:    false,
-			IntervalBased:       false,
-			Metrics:             i.metrics,
-			MetricLabel:         "dimmer",
-		}
-		out.scaler = &brownout.PIDController{
-			OxMax:             1000,
-			OxMin:             1,
-			MaxOut:            6,
-			MinOut:            1,
-			P:                 0.0025,
-			Ti:                1000,
-			IntervalBased:     true,
-			AutoTuningEnabled: false,
-			AutoTuningActive:  false,
-			Current:           1,
-			Metrics:           i.metrics,
-			MetricLabel:       "scaler",
-		}
-		return out
+	for deployment, conf := range c.Targets {
+		out.createScalerController(conf, deployment)
+		out.createDimmerController(conf, deployment)
 	}
-	return nil
+	return out
 }
 
-// controller used to perform runtime updates
-type controller struct {
-	reloadInterval    time.Duration
-	lastUpdate        time.Time
-	lastScalingUpdate time.Time
-	scalingInterval   time.Duration
-	scalingHysteris   time.Duration
-	needsReload       bool
-	logger            types.Logger
-	targets           map[string]TargetConfig
-	cmd               func(socket string, observer func(duration time.Duration), commands ...string) ([]string, error)
-	socket            string
-	metrics           types.Metrics
-	currConfig        *config
-	dimmer            brownout.Controller
-	scaler            brownout.Controller
+func (c *controller) createDimmerController(conf TargetConfig, deployment string) {
+	conf.DimmerPID.Initialise(float64(conf.RequestLimit), float64(conf.TargetValue))
+	c.dimmers[deployment] = &brownout.PIDController{
+		OutLimits:         brownout.CreateLimits(float64(conf.RequestLimit), 0),
+		OxLimits:          brownout.CreateLimits(1e6, -1e6),
+		IntervalBased:     false,
+		AutoTuningEnabled: false,
+		Metrics:           c.metrics,
+		MetricLabel:       fmt.Sprintf("dimmer-%q", deployment),
+		DeploymentName:    deployment,
+	}
+	c.dimmers[deployment].SetController(conf.DimmerPID)
+	c.logger.Info("Created Dimmer Controller, the result is %+v", c.dimmers[deployment])
+}
+
+func (c *controller) createScalerController(conf TargetConfig, deployment string) {
+	conf.ScalerPID.Initialise(float64(conf.TargetReplicas), float64(conf.TargetReplicas))
+	c.scalers[deployment] = &brownout.PIDController{
+		OutLimits:         brownout.CreateLimits(float64(conf.MaxReplicas), float64(conf.TargetReplicas)),
+		OxLimits:          brownout.CreateLimits(1, float64(conf.RequestLimit)),
+		IntervalBased:     true,
+		AutoTuningEnabled: false,
+		Metrics:           c.metrics,
+		MetricLabel:       fmt.Sprintf("scaler-%q", deployment),
+		DeploymentName:    deployment,
+	}
+	c.scalers[deployment].SetController(conf.ScalerPID)
+	c.logger.Info("Created Scaler Controller, the result is %+v", c.scalers[deployment])
 }
 
 // Coordinates metric collection and updates the config with any necessary action
@@ -183,33 +186,33 @@ func (c *controller) Update(backend *hatypes.Backend) {
 
 	c.logger.Info("In the Update, the targets are %+v", c.targets)
 
-	for _, config := range c.targets {
+	for deployment, config := range c.targets {
 		c.logger.Info("Considering deployment %q for scaling", config.DeploymentName)
 		c.currConfig.brownout.UpdateDeployments[config.DeploymentName] =
-			c.getScalerAdjustment(c.currConfig.brownout.Rates[config.Paths[0]])
+			c.getScalerAdjustment(c.currConfig.brownout.Rates[config.Paths[0]], deployment)
 
 		c.logger.Info("Set deployment %q to %f replicas", config.DeploymentName,
 			c.currConfig.brownout.UpdateDeployments[config.DeploymentName])
 	}
 
-	c.UpdateDeployments()
+	c.updateDeployments()
 }
 
 func (c *controller) execApplyACL(backend *hatypes.Backend, adjustment int) {
 	for path := range c.currConfig.brownout.Rates {
 		for _, p := range c.targets[backend.Name].Paths {
 			if p == path {
-				c.addRateLimitToConfig(path, adjustment)
+				c.addRateLimitToConfig(path, adjustment, backend.Name)
 			}
 		}
 	}
 }
 
 // Given the current error, returns the necessary number of replicas
-func (c *controller) getScalerAdjustment(current int) float64 {
-	c.logger.Info("Scaler goal is %f, current is %d", c.dimmer.GetTargetValue(), current)
-	c.scaler.SetGoal(c.dimmer.GetTargetValue())
-	return c.scaler.NextAutoTuned(float64(current), time.Now().Sub(c.lastScalingUpdate))
+func (c *controller) getScalerAdjustment(current int, deployment string) float64 {
+	c.logger.Info("Scaler goal is %f, current is %d", c.dimmers[deployment].GetTargetValue(), current)
+	c.scalers[deployment].SetGoal(c.dimmers[deployment].GetTargetValue())
+	return c.scalers[deployment].Next(float64(current), time.Now().Sub(c.lastScalingUpdate))
 }
 
 // Given the current error, returns the necessary adjustment for brownout ACL and rate limiting
@@ -217,18 +220,17 @@ func (c *controller) getDimmerAdjustment(backend string, stats map[string]string
 	// The PID controller
 	response := 0
 
-	for metric, target := range c.targets[backend].Targets {
-		if current, ok := stats[metric]; ok {
-			cur, err := strconv.ParseFloat(current, 64)
-			if err != nil {
-				c.logger.Error("Failed to parse an int from %q", current)
-				continue
-			}
-			// Casting to int, as this directly corresponds to the rate for all non-essential endpoints
-			c.dimmer.SetGoal(float64(target))
-			response = int(c.dimmer.NextAutoTuned(cur, time.Now().Sub(c.lastUpdate)))
+	if current, ok := stats[c.targets[backend].Target]; ok {
+		cur, err := strconv.ParseFloat(current, 64)
+		if err != nil {
+			c.logger.Error("Failed to parse an int from %q", current)
 		}
+		c.dimmers[backend].SetGoal(float64(c.targets[backend].TargetValue))
+
+		// Casting to int, as this directly corresponds to the rate for all non-essential endpoints
+		response = int(c.dimmers[backend].Next(cur, time.Now().Sub(c.lastUpdate)))
 	}
+
 	return response
 }
 
@@ -288,7 +290,7 @@ func (c *controller) recordResponseTime(backend string, stats map[string]string)
 }
 
 // Adds Rate Limiting ACL to the config, enforcing brownout at the LB level
-func (c *controller) addRateLimitToConfig(path string, rate int) {
+func (c *controller) addRateLimitToConfig(path string, rate int, deployment string) {
 	curr := c.currConfig.brownout.Rates[path]
 	if curr != rate {
 		c.logger.InfoV(2, "Updated the path %q from %d to %d in the rates map %p", path, curr, rate,
@@ -297,7 +299,7 @@ func (c *controller) addRateLimitToConfig(path string, rate int) {
 		c.updateBrownoutMap(path, rate)
 		c.needsReload = true
 	}
-	c.metrics.SetBrownOutFeatureStatus(path, float64(rate))
+	c.metrics.SetBrownOutFeatureStatus(path, float64(rate), deployment)
 }
 
 func (c *controller) updateBrownoutMap(path string, adjustment int) {
@@ -308,7 +310,7 @@ func (c *controller) updateBrownoutMap(path string, adjustment int) {
 	}
 }
 
-func (c *controller) UpdateDeployments() {
+func (c *controller) updateDeployments() {
 	c.logger.Info("Updating Deployments to %+v", c.currConfig.brownout.UpdateDeployments)
 	for depl, repl := range c.currConfig.brownout.UpdateDeployments {
 		d, err := c.currConfig.brownout.Client.AppsV1().Deployments("default").Get(depl, metav1.GetOptions{})
@@ -336,7 +338,6 @@ func (c *controller) UpdateDeployments() {
 		c.metrics.SetBackendNumberOfPods(depl, *d.Spec.Replicas)
 
 	}
-
 }
 
 func (c *controller) getReplicaCount(current int, scaler float64) int {

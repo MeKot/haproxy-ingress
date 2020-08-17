@@ -287,7 +287,7 @@ func (i *instance) haproxyUpdate(timer *utils.Timer) {
 	//
 	defer i.rotateConfig()
 	i.curConfig.SyncConfig()
-	i.brownout = i.GetController(PID)
+	i.brownout = i.GetController()
 	if err := i.curConfig.WriteFrontendMaps(); err != nil {
 		i.logger.Error("error building configuration group: %v", err)
 		i.metrics.IncUpdateNoop()
