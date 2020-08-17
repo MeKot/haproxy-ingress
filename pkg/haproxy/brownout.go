@@ -25,7 +25,7 @@ type Controller interface {
 // is scaled browned out
 type TargetConfig struct {
 	Paths               []string     `json:"paths"`
-	RequestLimit        int          `josn:"request_limit"`
+	RequestLimit        int          `json:"request_limit"`
 	Target              string       `json:"target"`
 	TargetValue         int          `json:"target_value"`
 	TargetReplicas      int          `json:"target_replicas"`
@@ -184,8 +184,6 @@ func (c *controller) Update(backend *hatypes.Backend) {
 		return
 	}
 
-	c.logger.Info("In the Update, the targets are %+v", c.targets)
-
 	for deployment, config := range c.targets {
 		c.logger.Info("Considering deployment %q for scaling", config.DeploymentName)
 		c.currConfig.brownout.Deployments[config.DeploymentName] =
@@ -208,7 +206,7 @@ func (c *controller) execApplyACL(backend *hatypes.Backend, adjustment int) {
 	}
 }
 
-// Given the current error, returns the necessary number of replicas
+// Given the current dimmer status, returns the necessary number of replicas
 func (c *controller) getScalerAdjustment(current int, deployment string) float64 {
 	c.logger.Info("Scaler goal is %f, current is %d", c.dimmers[deployment].GetTargetValue(), current)
 	c.scalers[deployment].SetGoal(c.dimmers[deployment].GetTargetValue())
@@ -253,14 +251,12 @@ func (c *controller) readStats(id string) (map[string]string, error) {
 		c.logger.Error("Failed to parse the keys")
 		return map[string]string{}, err
 	}
-	//c.logger.InfoV(2, "Read %d keys from the csv", len(keys))
 
 	values, err := r.Read()
 	if err != nil {
 		c.logger.Error("Failed to parse the values")
 		return map[string]string{}, err
 	}
-	//c.logger.InfoV(2, "Read %d values from the csv", len(values))
 
 	if len(values) != len(keys) {
 		return map[string]string{}, errors.New("number of keys does not match the number of values")
@@ -285,6 +281,7 @@ func (c *controller) recordResponseTime(backend string, stats map[string]string)
 		return
 	}
 
+	c.logger.Info(fmt.Sprintf("Response time for %q is %d", backend, rtime))
 	c.metrics.SetBackendResponseTime(backend, rtime)
 
 }

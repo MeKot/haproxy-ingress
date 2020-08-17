@@ -90,7 +90,6 @@ func (c *PIDController) normalControlLoop(e float64, lastUpdate time.Duration) f
 	glog.Info("Normal control loop, autotuning disabled")
 	//c.P = (e / math.Abs(e)) * math.Abs(c.P)
 	proportionalAction := 0.0
-	glog.Info(fmt.Sprintf("The current object is %+v", c))
 
 	if c.IntervalBased && math.Abs(e) < math.Abs(c.OxLimits.max-c.OxLimits.min)/4 {
 		glog.Info("Skipping this iteration because we are within the target range")
