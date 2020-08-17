@@ -83,7 +83,7 @@ func (i *instance) GetController() Controller {
 		}
 
 		// Update the scaling parameters
-		v, ok := i.curConfig.Brownout().UpdateDeployments[configuration.DeploymentName]
+		v, ok := i.curConfig.Brownout().Deployments[configuration.DeploymentName]
 
 		if ok {
 			i.logger.Info("Deployment %q has %f replicas", configuration.DeploymentName, v)
@@ -91,7 +91,7 @@ func (i *instance) GetController() Controller {
 
 		if !ok {
 			// Set to target replicas, so we update them on the next scalability action
-			i.curConfig.Brownout().UpdateDeployments[configuration.DeploymentName] = float64(configuration.TargetReplicas)
+			i.curConfig.Brownout().Deployments[configuration.DeploymentName] = float64(configuration.TargetReplicas)
 			i.logger.Info("Det the number of replicas for %q at %d", configuration.DeploymentName, configuration.TargetReplicas)
 		}
 	}
@@ -134,7 +134,7 @@ func (c *controller) createDimmerController(conf TargetConfig, deployment string
 		IntervalBased:     false,
 		AutoTuningEnabled: false,
 		Metrics:           c.metrics,
-		MetricLabel:       fmt.Sprintf("dimmer-%q", deployment),
+		MetricLabel:       "dimmer",
 		DeploymentName:    deployment,
 	}
 	c.dimmers[deployment].SetController(conf.DimmerPID)
@@ -149,7 +149,7 @@ func (c *controller) createScalerController(conf TargetConfig, deployment string
 		IntervalBased:     true,
 		AutoTuningEnabled: false,
 		Metrics:           c.metrics,
-		MetricLabel:       fmt.Sprintf("scaler-%q", deployment),
+		MetricLabel:       "scaler",
 		DeploymentName:    deployment,
 	}
 	c.scalers[deployment].SetController(conf.ScalerPID)
@@ -188,11 +188,11 @@ func (c *controller) Update(backend *hatypes.Backend) {
 
 	for deployment, config := range c.targets {
 		c.logger.Info("Considering deployment %q for scaling", config.DeploymentName)
-		c.currConfig.brownout.UpdateDeployments[config.DeploymentName] =
+		c.currConfig.brownout.Deployments[config.DeploymentName] =
 			c.getScalerAdjustment(c.currConfig.brownout.Rates[config.Paths[0]], deployment)
 
 		c.logger.Info("Set deployment %q to %f replicas", config.DeploymentName,
-			c.currConfig.brownout.UpdateDeployments[config.DeploymentName])
+			c.currConfig.brownout.Deployments[config.DeploymentName])
 	}
 
 	c.updateDeployments()
@@ -311,8 +311,8 @@ func (c *controller) updateBrownoutMap(path string, adjustment int) {
 }
 
 func (c *controller) updateDeployments() {
-	c.logger.Info("Updating Deployments to %+v", c.currConfig.brownout.UpdateDeployments)
-	for depl, repl := range c.currConfig.brownout.UpdateDeployments {
+	c.logger.Info("Updating Deployments to %+v", c.currConfig.brownout.Deployments)
+	for depl, repl := range c.currConfig.brownout.Deployments {
 		d, err := c.currConfig.brownout.Client.AppsV1().Deployments("default").Get(depl, metav1.GetOptions{})
 
 		if err != nil {

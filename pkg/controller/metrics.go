@@ -124,7 +124,7 @@ func createMetrics(bucketsResponseTime []float64) *metrics {
 				Name:      "backend_feature_status",
 				Help:      "Feature status per backend (0 - 1), used to rate limit",
 			},
-			[]string{"feature"},
+			[]string{"feature", "backend"},
 		),
 		backendNumberOfPods: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -140,7 +140,7 @@ func createMetrics(bucketsResponseTime []float64) *metrics {
 				Name:      "control_error",
 				Help:      "Error that controller reacts to",
 			},
-			[]string{"label"},
+			[]string{"label", "deployment"},
 		),
 		controllerParameter: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -148,7 +148,7 @@ func createMetrics(bucketsResponseTime []float64) *metrics {
 				Name:      "controller_params",
 				Help:      "Controller parameter values",
 			},
-			[]string{"parameter", "label"},
+			[]string{"parameter", "label", "deployment"},
 		),
 		controllerActions: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
@@ -156,7 +156,7 @@ func createMetrics(bucketsResponseTime []float64) *metrics {
 				Name:      "controller_actions",
 				Help:      "Control actions",
 			},
-			[]string{"action", "label"},
+			[]string{"action", "label", "deployment"},
 		),
 	}
 	prometheus.MustRegister(metrics.responseTime)
