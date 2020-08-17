@@ -1,39 +1,13 @@
 # HAProxy Ingress controller
 
 [Ingress](https://kubernetes.io/docs/concepts/services-networking/ingress/) controller
-implementation for [HAProxy](http://www.haproxy.org/) loadbalancer.
+implementation for [HAProxy](http://www.haproxy.org/) loadbalancer extended with a custom scaling and [brownout](https://dl.acm.org/doi/10.1145/2568225.2568227) controller.
 
-[![Build Status](https://travis-ci.org/jcmoraisjr/haproxy-ingress.svg?branch=master)](https://travis-ci.org/jcmoraisjr/haproxy-ingress) [![Docker Repository on Quay](https://quay.io/repository/jcmoraisjr/haproxy-ingress/status "Docker Repository on Quay")](https://quay.io/repository/jcmoraisjr/haproxy-ingress)
+The original [README](https://github.com/MeKot/haproxy-ingress/blob/feature/brownout/README_OLD.md) for the HAProxy-Ingress Controller
 
-HAProxy Ingress is a Kubernetes ingress controller: it configures a HAProxy instance
-to route incoming requests from an external network to the in-cluster applications.
-The routing configurations are built reading specs from the Kubernetes cluster.
-Updates made to the cluster are applied on the fly to the HAProxy instance.
+# What this is 
 
-## Use HAProxy Ingress
+This is a modified version of the HAProxy-Ingress controller that implements the brownout paradigm. It 
+extends the paradigm further by combining it with a replication controller. 
 
-Find some useful links below:
-
-* Home of HAProxy Ingress docs: [haproxy-ingress.github.io/docs](https://haproxy-ingress.github.io/docs/)
-* Global ConfigMap options and ingress/service annotations, now named configuration keys: [haproxy-ingress.github.io/docs/configuration/keys/](https://haproxy-ingress.github.io/docs/configuration/keys/)
-* Static command-line options: [haproxy-ingress.github.io/docs/configuration/command-line/](https://haproxy-ingress.github.io/docs/configuration/command-line/)
-* Old single-page doc (up to v0.8): [/release-0.8/README.md](https://github.com/jcmoraisjr/haproxy-ingress/blob/release-0.8/README.md)
-
-## Develop HAProxy Ingress
-
-Building HAProxy Ingress:
-
-```
-mkdir -p $GOPATH/src/github.com/jcmoraisjr
-cd $GOPATH/src/github.com/jcmoraisjr
-git clone https://github.com/jcmoraisjr/haproxy-ingress.git
-cd haproxy-ingress
-make
-```
-
-The following `make` targets are currently supported:
-
-* `install`: run `go install` which saves some building time.
-* `build` (default): compiles HAProxy Ingress and generates an ELF (Linux) executable at `rootfs/haproxy-ingress-controller` despite the source platform.
-* `test`: run unit tests
-* `image`: generates a Docker image tagged `localhost/haproxy-ingress:latest`
+## This is a prototype that was developed for [QUDOS2020](http://2020.qudos-workshop.org/call_for_papers/)
