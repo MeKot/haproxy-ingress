@@ -136,7 +136,7 @@ func (c *controller) updateControllers() {
 }
 
 func (c *controller) createDimmerController(conf TargetConfig, deployment string) {
-	conf.DimmerPID.Initialise(float64(conf.RequestLimit), float64(conf.TargetValue))
+	conf.DimmerPID.Initialise(1.0, float64(conf.TargetValue))
 	c.dimmers[deployment] = &brownout.PIDController{
 		OutLimits:         brownout.CreateLimits(float64(conf.RequestLimit), 0),
 		OxLimits:          brownout.CreateLimits(1e6, -1e6),

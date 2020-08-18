@@ -147,7 +147,7 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 	// Anti-windup
 	c.pid.integralSum = c.pid.current - proportionalAction
 
-	return c.pid.current
+	return c.pid.current * c.OutLimits.max
 }
 
 func (c *PIDController) autoTune(e float64, lastUpdate time.Duration, current float64) {
@@ -204,9 +204,5 @@ func (c *PIDController) GetTargetValue() float64 {
 }
 
 func (c *PIDController) clampOutput() {
-	if c.pid.current > c.OutLimits.max {
-		c.pid.current = c.OutLimits.max
-	} else if c.pid.current < c.OutLimits.min {
-		c.pid.current = c.OutLimits.min
-	}
+	c.pid.current = math.Min(math.Max(0, c.pid.current), 1)
 }
