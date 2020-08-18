@@ -173,7 +173,7 @@ func (c *controller) Update(backend *hatypes.Backend) {
 		return
 	}
 	// Have to use ID here, as prometheus only exports backend IDs
-	c.recordResponseTime(backend.ID, stats)
+	c.recordResponseTime(backend.Name, stats)
 
 	if c.lastUpdate.Add(c.reloadInterval).After(time.Now()) {
 		//c.logger.Info("Waiting before next update")
