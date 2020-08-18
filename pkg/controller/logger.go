@@ -37,6 +37,7 @@ func (l *logger) InfoV(v int, msg string, args ...interface{}) {
 	if glog.V(glog.Level(v)) {
 		glog.InfoDepth(l.depth, l.build(msg, args))
 	}
+	glog.InfoDepth(l.depth, l.build(msg, args))
 }
 
 func (l *logger) Info(msg string, args ...interface{}) {
