@@ -204,5 +204,5 @@ func (c *PIDController) GetTargetValue() float64 {
 }
 
 func (c *PIDController) clampOutput() {
-	c.pid.current = math.Min(math.Max(0, c.pid.current), 1)
+	c.pid.current = math.Min(math.Max(c.OutLimits.min/c.OutLimits.max, c.pid.current), 1)
 }

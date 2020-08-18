@@ -121,8 +121,8 @@ func (i *instance) GetController() Controller {
 		scalers:           make(map[string]brownout.Controller),
 	}
 	for deployment, conf := range c.Targets {
-		out.createScalerController(conf, deployment)
 		out.createDimmerController(conf, deployment)
+		out.createScalerController(conf, deployment)
 	}
 	return out
 }
@@ -138,7 +138,7 @@ func (c *controller) updateControllers() {
 func (c *controller) createDimmerController(conf TargetConfig, deployment string) {
 	conf.DimmerPID.Initialise(1.0, float64(conf.TargetValue))
 	c.dimmers[deployment] = &brownout.PIDController{
-		OutLimits:         brownout.CreateLimits(float64(conf.RequestLimit), 0),
+		OutLimits:         brownout.CreateLimits(float64(conf.RequestLimit), 1),
 		OxLimits:          brownout.CreateLimits(1e6, -1e6),
 		IntervalBased:     false,
 		AutoTuningEnabled: false,
@@ -151,7 +151,7 @@ func (c *controller) createDimmerController(conf TargetConfig, deployment string
 }
 
 func (c *controller) createScalerController(conf TargetConfig, deployment string) {
-	conf.ScalerPID.Initialise(float64(conf.TargetReplicas), float64(conf.TargetReplicas))
+	conf.ScalerPID.Initialise(float64(conf.TargetReplicas), float64(conf.RequestLimit))
 	c.scalers[deployment] = &brownout.PIDController{
 		OutLimits:         brownout.CreateLimits(float64(conf.MaxReplicas), float64(conf.TargetReplicas)),
 		OxLimits:          brownout.CreateLimits(1, float64(conf.RequestLimit)),
@@ -195,6 +195,7 @@ func (c *controller) Update(backend *hatypes.Backend) {
 
 	for deployment, config := range c.targets {
 		c.logger.Info("Considering deployment %q for scaling", config.DeploymentName)
+		// FIXME: Remove the magic 0 from below and add proper deployment reference
 		c.currConfig.brownout.Deployments[config.DeploymentName] =
 			c.getScalerAdjustment(c.currConfig.brownout.Rates[config.Paths[0]], deployment)
 
