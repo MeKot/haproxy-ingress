@@ -249,7 +249,7 @@ func (m *metrics) SetBackendNumberOfPods(backend string, pods int32) {
 	m.backendNumberOfPods.WithLabelValues(backend).Set(float64(pods))
 }
 
-func (m *metrics) SetControllerResponse(response float64, label string, deployment string) {
+func (m *metrics) SetControlError(response float64, label string, deployment string) {
 	m.controlError.WithLabelValues(label, deployment).Set(response)
 }
 

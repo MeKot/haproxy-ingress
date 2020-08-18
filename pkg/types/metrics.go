@@ -39,7 +39,7 @@ type Metrics interface {
 	SetBrownOutFeatureStatus(feature string, currentValue float64, deployment string)
 	SetBackendResponseTime(backend string, duration time.Duration)
 	SetBackendNumberOfPods(backend string, pods int32)
-	SetControllerResponse(response float64, label string, deployment string)
+	SetControlError(response float64, label string, deployment string)
 	SetControllerParameterValue(ivalue float64, param string, label string, deployment string)
 	SetControllerActionValue(pvalue float64, action string, label string, deployment string)
 }

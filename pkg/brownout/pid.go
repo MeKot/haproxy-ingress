@@ -120,7 +120,7 @@ func (c *PIDController) pushMetrics(error float64, deployment string) {
 		c.Metrics.SetControllerParameterValue(c.pid.P, "K", c.MetricLabel, deployment)
 		c.Metrics.SetControllerActionValue(c.pid.P*error, "proportional", c.MetricLabel, deployment)
 		c.Metrics.SetControllerActionValue(c.pid.integralSum, "integral_sum", c.MetricLabel, deployment)
-		c.Metrics.SetControllerResponse(error, c.MetricLabel, deployment)
+		c.Metrics.SetControlError(error, c.MetricLabel, deployment)
 	} else {
 		glog.Warning("Metrics are null inside the controller")
 	}
