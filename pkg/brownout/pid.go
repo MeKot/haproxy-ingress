@@ -1,6 +1,7 @@
 package brownout
 
 import (
+	"container/ring"
 	"fmt"
 	"github.com/golang/glog"
 	"github.com/jcmoraisjr/haproxy-ingress/pkg/types"
@@ -30,23 +31,27 @@ type Autotuner struct {
 }
 
 type PID struct {
-	current     float64
-	P           float64 `json:"p"`
-	integralSum float64
-	Ti          float64 `json:"ti"`
-	goal        float64
+	ZeroedErrorLimits *Limits `json:"zeroed_error_range"`
+	current           float64
+	P                 float64 `json:"p"`
+	integralSum       float64
+	Ti                float64 `json:"ti"`
+	goal              float64
+	D                 float64 `json:"d"`
+	ControlLoopPeriod int     `json:"period"`
+	currentLoopCount  int
 }
 
 type Limits struct {
-	min float64
-	max float64
+	Min float64 `json:"min"`
+	Max float64 `json:"max"`
 }
 
 type PIDController struct {
-	OutLimits         *Limits
-	OxLimits          *Limits
-	AutoTuningEnabled bool
-	IntervalBased     bool
+	OutLimits           *Limits
+	ProcessOutputLimits *Limits
+	AutoTuningEnabled   bool
+	Stats               *StatsKeeper
 
 	Metrics        types.Metrics
 	MetricLabel    string
@@ -58,8 +63,17 @@ type PIDController struct {
 
 func CreateLimits(max float64, min float64) *Limits {
 	return &Limits{
-		max: max,
-		min: min,
+		Max: max,
+		Min: min,
+	}
+}
+
+func CreateStatsKeeper(windowSize int) *StatsKeeper {
+	return &StatsKeeper{
+		statsSlidingWindow: ring.New(windowSize),
+		Maxlen:             windowSize,
+		runningSum:         0,
+		numElems:           0,
 	}
 }
 
@@ -97,19 +111,15 @@ func (c *PIDController) normalControlLoop(e float64, lastUpdate time.Duration) f
 	//c.P = (e / math.Abs(e)) * math.Abs(c.P)
 	proportionalAction := 0.0
 
-	if c.IntervalBased && math.Abs(e) < math.Abs(c.OxLimits.max-c.OxLimits.min)/4 {
-		glog.Info("Skipping this iteration because we are within the target range")
-	} else {
-		proportionalAction = c.pid.P * e
+	proportionalAction = c.pid.P * e
 
-		// Calculating the PI action
-		c.pid.current = proportionalAction + c.pid.integralSum + (c.pid.P*(lastUpdate.Seconds()/c.pid.Ti))*e
-		glog.Info(
-			fmt.Sprintf(
-				"Poportional action is %f and controller response is %f", proportionalAction, c.pid.current,
-			),
-		)
-	}
+	// Calculating the PI action
+	c.pid.current = proportionalAction + c.pid.integralSum + (c.pid.P*(lastUpdate.Seconds()/c.pid.Ti))*e
+	glog.Info(
+		fmt.Sprintf(
+			"Poportional action is %f and controller response is %f", proportionalAction, c.pid.current,
+		),
+	)
 	return proportionalAction
 }
 
@@ -126,17 +136,36 @@ func (c *PIDController) pushMetrics(error float64, deployment string) {
 	}
 }
 
-func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 {
-	c.autoTuner.stepCounter++
-	e := c.pid.goal - current
+func (c *PIDController) getError(current float64) float64 {
+	if current > c.pid.ZeroedErrorLimits.Min && current < c.pid.ZeroedErrorLimits.Max {
+		glog.Info(
+			fmt.Sprintf("Error is zero as current metric value %f is in range [%f, %f]",
+				current, c.pid.ZeroedErrorLimits.Min, c.pid.ZeroedErrorLimits.Max),
+		)
+		return 0
+	}
+	return c.pid.goal - current
+}
 
-	if c.AutoTuningEnabled && !c.autoTuner.AutoTuningActive && math.Abs(e) > c.autoTuner.AutoTuningThreshold {
-		c.activateAutoTuning()
+func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 {
+	if c.pid.currentLoopCount != c.pid.ControlLoopPeriod {
+		c.pid.currentLoopCount++
+		return c.pid.current
+	}
+
+	c.Stats.AddMeasurement(current)
+	e := c.getError(c.Stats.GetAverage())
+
+	if c.AutoTuningEnabled {
+		c.autoTuner.stepCounter++
+		if !c.autoTuner.AutoTuningActive && math.Abs(e) > c.autoTuner.AutoTuningThreshold {
+			c.activateAutoTuning()
+		}
 	}
 
 	proportionalAction := 0.0
 	if c.AutoTuningEnabled && c.autoTuner.AutoTuningActive {
-		c.autoTune(e, lastUpdate, current)
+		c.autoTune(e, lastUpdate, c.Stats.GetAverage())
 	} else {
 		proportionalAction = c.normalControlLoop(e, lastUpdate)
 	}
@@ -147,7 +176,7 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 	// Anti-windup
 	c.pid.integralSum = c.pid.current - proportionalAction
 
-	return c.pid.current * c.OutLimits.max
+	return c.pid.current * c.OutLimits.Max
 }
 
 func (c *PIDController) autoTune(e float64, lastUpdate time.Duration, current float64) {
@@ -161,9 +190,9 @@ func (c *PIDController) autoTune(e float64, lastUpdate time.Duration, current fl
 		c.pid.current -= c.autoTuner.DuAutotuning
 	}
 
-	c.OxLimits.max = math.Max(c.OxLimits.max, current)
-	c.OxLimits.min = math.Min(c.OxLimits.min, current)
-	glog.Info(fmt.Sprintf("OxMax is %f and OxMin is %f", c.OxLimits.max, c.OxLimits.min))
+	c.ProcessOutputLimits.Max = math.Max(c.ProcessOutputLimits.Max, current)
+	c.ProcessOutputLimits.Min = math.Min(c.ProcessOutputLimits.Min, current)
+	glog.Info(fmt.Sprintf("OxMax is %f and OxMin is %f", c.ProcessOutputLimits.Max, c.ProcessOutputLimits.Min))
 
 	if atRelays == 1 && c.autoTuner.atRelaysOld == -1 {
 		// There has been a change in error sign
@@ -178,7 +207,7 @@ func (c *PIDController) autoTune(e float64, lastUpdate time.Duration, current fl
 			periodDifference := math.Abs((periodStep - c.autoTuner.periodStepOld) / c.autoTuner.periodStepOld)
 			if c.autoTuner.periodStepOld > 0 && periodDifference < 0.05 {
 				// There was a flip upwards already and the relative interval between the flips is small
-				amplitude := c.OxLimits.max - c.OxLimits.min
+				amplitude := c.ProcessOutputLimits.Max - c.ProcessOutputLimits.Min
 				wox := 2 * math.Pi / (periodStep * lastUpdate.Seconds())
 				c.pid.Ti = math.Tan((c.autoTuner.PmAutotuning/180.0)*math.Pi) / wox
 				c.pid.P = 4 * c.autoTuner.DuAutotuning / math.Pi / (amplitude / 2) /
@@ -200,9 +229,9 @@ func (c *PIDController) SetGoal(newGoal float64) {
 
 func (c *PIDController) GetTargetValue() float64 {
 	// Something in the ballpark of 600, which is the target value for the dimmer
-	return ((c.OutLimits.max-c.OutLimits.min)*3)/5 + c.OutLimits.min
+	return ((c.OutLimits.Max-c.OutLimits.Min)*3)/5 + c.OutLimits.Min
 }
 
 func (c *PIDController) clampOutput() {
-	c.pid.current = math.Min(math.Max(c.OutLimits.min/c.OutLimits.max, c.pid.current), 1)
+	c.pid.current = math.Min(math.Max(c.OutLimits.Min/c.OutLimits.Max, c.pid.current), 1)
 }

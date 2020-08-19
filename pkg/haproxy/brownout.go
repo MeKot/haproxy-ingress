@@ -24,16 +24,18 @@ type Controller interface {
 // Represents the per-target configuration, where target is the deployment that
 // is scaled browned out
 type TargetConfig struct {
-	Paths               []string     `json:"paths"`
-	RequestLimit        int          `json:"request_limit"`
-	Target              string       `json:"target"`
-	TargetValue         int          `json:"target_value"`
-	TargetReplicas      int          `json:"target_replicas"`
-	MaxReplicas         int          `json:"max_replicas"`
-	DeploymentNamespace string       `json:"deployment_namespace"`
-	DeploymentName      string       `json:"deployment_name"`
-	ScalerPID           brownout.PID `json:"scaler_pid"`
-	DimmerPID           brownout.PID `json:"dimmer_pid"`
+	Paths                       []string     `json:"paths"`
+	RequestLimit                int          `json:"request_limit"`
+	Target                      string       `json:"target"`
+	TargetValue                 int          `json:"target_value"`
+	TargetReplicas              int          `json:"target_replicas"`
+	MaxReplicas                 int          `json:"max_replicas"`
+	DeploymentNamespace         string       `json:"deployment_namespace"`
+	DeploymentName              string       `json:"deployment_name"`
+	ScalerMeasurementWindowSize int          `json:"scaler_measurement_window_size"`
+	DimmerMeasurementWindowSize int          `json:"dimmer_measurement_window_size"`
+	ScalerPID                   brownout.PID `json:"scaler_pid"`
+	DimmerPID                   brownout.PID `json:"dimmer_pid"`
 }
 
 type BrownoutConfig struct {
@@ -138,13 +140,13 @@ func (c *controller) updateControllers() {
 func (c *controller) createDimmerController(conf TargetConfig, deployment string) {
 	conf.DimmerPID.Initialise(1.0, float64(conf.TargetValue))
 	c.dimmers[deployment] = &brownout.PIDController{
-		OutLimits:         brownout.CreateLimits(float64(conf.RequestLimit), 1),
-		OxLimits:          brownout.CreateLimits(1e6, -1e6),
-		IntervalBased:     false,
-		AutoTuningEnabled: false,
-		Metrics:           c.metrics,
-		MetricLabel:       "dimmer",
-		DeploymentName:    deployment,
+		OutLimits:           brownout.CreateLimits(float64(conf.RequestLimit), 1),
+		ProcessOutputLimits: brownout.CreateLimits(1e6, -1e6),
+		Stats:               brownout.CreateStatsKeeper(conf.DimmerMeasurementWindowSize),
+		AutoTuningEnabled:   false,
+		Metrics:             c.metrics,
+		MetricLabel:         "dimmer",
+		DeploymentName:      deployment,
 	}
 	c.dimmers[deployment].SetController(conf.DimmerPID)
 	c.logger.Info("Created Dimmer Controller, the result is %+v", c.dimmers[deployment])
@@ -153,13 +155,13 @@ func (c *controller) createDimmerController(conf TargetConfig, deployment string
 func (c *controller) createScalerController(conf TargetConfig, deployment string) {
 	conf.ScalerPID.Initialise(float64(conf.TargetReplicas), float64(conf.RequestLimit))
 	c.scalers[deployment] = &brownout.PIDController{
-		OutLimits:         brownout.CreateLimits(float64(conf.MaxReplicas), float64(conf.TargetReplicas)),
-		OxLimits:          brownout.CreateLimits(1, float64(conf.RequestLimit)),
-		IntervalBased:     true,
-		AutoTuningEnabled: false,
-		Metrics:           c.metrics,
-		MetricLabel:       "scaler",
-		DeploymentName:    deployment,
+		OutLimits:           brownout.CreateLimits(float64(conf.MaxReplicas), float64(conf.TargetReplicas)),
+		ProcessOutputLimits: brownout.CreateLimits(1, float64(conf.RequestLimit)),
+		Stats:               brownout.CreateStatsKeeper(conf.ScalerMeasurementWindowSize),
+		AutoTuningEnabled:   false,
+		Metrics:             c.metrics,
+		MetricLabel:         "scaler",
+		DeploymentName:      deployment,
 	}
 	c.scalers[deployment].SetController(conf.ScalerPID)
 	c.logger.Info("Created Scaler Controller, the result is %+v", c.scalers[deployment])
