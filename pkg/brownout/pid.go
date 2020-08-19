@@ -38,7 +38,8 @@ type PIController struct {
 	Ti                float64 `json:"ti"`
 	goal              float64
 	D                 float64 `json:"d"`
-	ControlLoopPeriod int     `json:"period"`
+	previousMeasure   float64
+	ControlLoopPeriod int `json:"period"`
 	currentLoopCount  int
 	isAdaptivePI      bool
 	AdaptivePI        *AdaptivePI `json:"adaptivePI"`
@@ -99,6 +100,7 @@ func (pid *PIController) Initialise(current float64, goal float64) {
 }
 
 func (pid *PIController) piControlLoop(measure float64, e float64) {
+	glog.Info("Adaptive PI control loop")
 	estimationError := pid.current*pid.AdaptivePI.slope - measure
 	pid.P = pid.AdaptivePI.RlsPole * pid.current /
 		(1 + pid.AdaptivePI.RlsPole*math.Pow(pid.current, 2))
@@ -141,16 +143,32 @@ func (c *PIDController) activateAutoTuning() {
 }
 
 // Runs a simple plain PIController-only control loop
-func (c *PIDController) normalControlLoop(e float64, lastUpdate time.Duration) float64 {
+func (c *PIDController) pidControlLoop(measure float64, e float64, lastUpdate time.Duration) float64 {
+	/*
+	   # Control
+	   d_measure = measure - \
+	       (self._last_measure if self._last_measure is not None else measure)
+	   self._derivative = self._Kd * d_measure / delta_time
+	   self._signal = self._proportional + self._integral + self._derivative
+	   self._last_measure = measure
+	*/
 	// Fixing the sign of the PI action
 	glog.Info("Normal control loop, autotuning disabled")
 	//c.P = (e / math.Abs(e)) * math.Abs(c.P)
-	proportionalAction := 0.0
-
-	proportionalAction = c.pid.P * e
+	proportionalAction := c.pid.P * e
+	c.pid.integralSum += c.pid.Ti * e * lastUpdate.Seconds()
+	prev := c.pid.previousMeasure
+	if prev == 0 {
+		prev = measure
+	}
+	c.pid.previousMeasure = measure
+	dMeasure := measure - prev
+	derivativeAction := c.pid.D * dMeasure / lastUpdate.Seconds()
+	c.Metrics.SetControllerActionValue(derivativeAction, "derivative", c.MetricLabel, c.DeploymentName)
+	c.pid.current = proportionalAction + c.pid.integralSum + derivativeAction
 
 	// Calculating the PI action
-	c.pid.current = proportionalAction + c.pid.integralSum + (c.pid.P*(lastUpdate.Seconds()/c.pid.Ti))*e
+	//c.pid.current = proportionalAction + c.pid.integralSum + (c.pid.P*(lastUpdate.Seconds()/c.pid.Ti))*e
 	glog.Info(
 		fmt.Sprintf(
 			"Poportional action is %f and controller response is %f", proportionalAction, c.pid.current,
@@ -213,7 +231,7 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 		if c.pid.isAdaptivePI {
 			c.pid.piControlLoop(current, e)
 		}
-		proportionalAction = c.normalControlLoop(e, lastUpdate)
+		proportionalAction = c.pidControlLoop(current, e, lastUpdate)
 	}
 
 	c.clampOutput()
