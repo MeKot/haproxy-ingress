@@ -13,8 +13,8 @@ type Controller interface {
 	Next(current float64, lastUpdate time.Duration) float64
 	SetGoal(newGoal float64)
 	GetTargetValue() float64
-	SetController(controller PID)
-	UpdateControllerParams(newParams PID)
+	SetController(controller PIController)
+	UpdateControllerParams(newParams PIController)
 	SetAutoTuner(tuner Autotuner)
 }
 
@@ -30,7 +30,7 @@ type Autotuner struct {
 	DuAutotuning        float64
 }
 
-type PID struct {
+type PIController struct {
 	ZeroedErrorLimits *Limits `json:"zeroed_error_range"`
 	current           float64
 	P                 float64 `json:"p"`
@@ -40,6 +40,14 @@ type PID struct {
 	D                 float64 `json:"d"`
 	ControlLoopPeriod int     `json:"period"`
 	currentLoopCount  int
+	isAdaptivePI      bool
+	AdaptivePI        *AdaptivePI `json:"adaptivePI"`
+}
+
+type AdaptivePI struct {
+	Pole    float64 `json:"pole"`
+	RlsPole float64 `json:"rls_pole"`
+	slope   float64
 }
 
 type Limits struct {
@@ -58,7 +66,7 @@ type PIDController struct {
 	DeploymentName string
 
 	autoTuner Autotuner
-	pid       PID
+	pid       PIController
 }
 
 func CreateLimits(max float64, min float64) *Limits {
@@ -77,16 +85,35 @@ func CreateStatsKeeper(windowSize int) *StatsKeeper {
 	}
 }
 
-func (pid *PID) Initialise(current float64, goal float64) {
+func (pid *PIController) Initialise(current float64, goal float64) {
 	pid.current = current
 	pid.goal = goal
+	if pid.AdaptivePI != nil {
+		pid.isAdaptivePI = true
+		pid.AdaptivePI.slope = 0
+	} else {
+		pid.isAdaptivePI = false
+	}
 }
 
-func (c *PIDController) SetController(newPID PID) {
+func (pid *PIController) piControlLoop(measure float64, e float64) {
+	estimationError := pid.current*pid.AdaptivePI.slope - measure
+	pid.P = pid.AdaptivePI.RlsPole * pid.current /
+		(1 + pid.AdaptivePI.RlsPole*math.Pow(pid.current, 2))
+	pid.AdaptivePI.slope -= pid.P * estimationError
+	pid.AdaptivePI.RlsPole -= math.Pow(pid.AdaptivePI.RlsPole, 2) * math.Pow(pid.current, 2) /
+		(1 + pid.AdaptivePI.RlsPole*math.Pow(pid.current, 2))
+
+	coeff_error := (pid.AdaptivePI.Pole - 1) / pid.AdaptivePI.slope
+	pid.current += coeff_error * e
+
+}
+
+func (c *PIDController) SetController(newPID PIController) {
 	c.pid = newPID
 }
 
-func (c *PIDController) UpdateControllerParams(newParams PID) {
+func (c *PIDController) UpdateControllerParams(newParams PIController) {
 	c.pid.P = newParams.P
 	c.pid.Ti = newParams.Ti
 }
@@ -104,7 +131,7 @@ func (c *PIDController) activateAutoTuning() {
 	c.autoTuner.lastUpToggle = 0
 }
 
-// Runs a simple plain PID-only control loop
+// Runs a simple plain PIController-only control loop
 func (c *PIDController) normalControlLoop(e float64, lastUpdate time.Duration) float64 {
 	// Fixing the sign of the PI action
 	glog.Info("Normal control loop, autotuning disabled")
@@ -126,11 +153,18 @@ func (c *PIDController) normalControlLoop(e float64, lastUpdate time.Duration) f
 // Push control loop metrics and controller actions to Prometheus
 func (c *PIDController) pushMetrics(error float64, deployment string) {
 	if c.Metrics != nil {
-		c.Metrics.SetControllerParameterValue(c.pid.Ti, "Ti", c.MetricLabel, deployment)
-		c.Metrics.SetControllerParameterValue(c.pid.P, "K", c.MetricLabel, deployment)
-		c.Metrics.SetControllerActionValue(c.pid.P*error, "proportional", c.MetricLabel, deployment)
-		c.Metrics.SetControllerActionValue(c.pid.integralSum, "integral_sum", c.MetricLabel, deployment)
-		c.Metrics.SetControlError(error, c.MetricLabel, deployment)
+		if c.pid.isAdaptivePI {
+			c.Metrics.SetControllerParameterValue(c.pid.P, "P", c.MetricLabel, deployment)
+			c.Metrics.SetControllerParameterValue(c.pid.AdaptivePI.slope, "Slope", c.MetricLabel, deployment)
+			c.Metrics.SetControllerParameterValue(c.pid.AdaptivePI.Pole, "Pole", c.MetricLabel, deployment)
+			c.Metrics.SetControllerParameterValue(c.pid.AdaptivePI.RlsPole, "RlsPole", c.MetricLabel, deployment)
+		} else {
+			c.Metrics.SetControllerParameterValue(c.pid.Ti, "Ti", c.MetricLabel, deployment)
+			c.Metrics.SetControllerParameterValue(c.pid.P, "K", c.MetricLabel, deployment)
+			c.Metrics.SetControllerActionValue(c.pid.P*error, "proportional", c.MetricLabel, deployment)
+			c.Metrics.SetControllerActionValue(c.pid.integralSum, "integral_sum", c.MetricLabel, deployment)
+			c.Metrics.SetControlError(error, c.MetricLabel, deployment)
+		}
 	} else {
 		glog.Warning("Metrics are null inside the controller")
 	}
@@ -167,6 +201,9 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 	if c.AutoTuningEnabled && c.autoTuner.AutoTuningActive {
 		c.autoTune(e, lastUpdate, c.Stats.GetAverage())
 	} else {
+		if c.pid.isAdaptivePI {
+			c.pid.piControlLoop(current, e)
+		}
 		proportionalAction = c.normalControlLoop(e, lastUpdate)
 	}
 

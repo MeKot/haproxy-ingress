@@ -24,18 +24,18 @@ type Controller interface {
 // Represents the per-target configuration, where target is the deployment that
 // is scaled browned out
 type TargetConfig struct {
-	Paths                       []string     `json:"paths"`
-	RequestLimit                int          `json:"request_limit"`
-	Target                      string       `json:"target"`
-	TargetValue                 int          `json:"target_value"`
-	TargetReplicas              int          `json:"target_replicas"`
-	MaxReplicas                 int          `json:"max_replicas"`
-	DeploymentNamespace         string       `json:"deployment_namespace"`
-	DeploymentName              string       `json:"deployment_name"`
-	ScalerMeasurementWindowSize int          `json:"scaler_measurement_window_size"`
-	DimmerMeasurementWindowSize int          `json:"dimmer_measurement_window_size"`
-	ScalerPID                   brownout.PID `json:"scaler_pid"`
-	DimmerPID                   brownout.PID `json:"dimmer_pid"`
+	Paths                       []string              `json:"paths"`
+	RequestLimit                int                   `json:"request_limit"`
+	Target                      string                `json:"target"`
+	TargetValue                 int                   `json:"target_value"`
+	TargetReplicas              int                   `json:"target_replicas"`
+	MaxReplicas                 int                   `json:"max_replicas"`
+	DeploymentNamespace         string                `json:"deployment_namespace"`
+	DeploymentName              string                `json:"deployment_name"`
+	ScalerMeasurementWindowSize int                   `json:"scaler_measurement_window_size"`
+	DimmerMeasurementWindowSize int                   `json:"dimmer_measurement_window_size"`
+	ScalerPID                   brownout.PIController `json:"scaler_pi"`
+	DimmerPID                   brownout.PIController `json:"dimmer_pi"`
 }
 
 type BrownoutConfig struct {
@@ -227,7 +227,7 @@ func (c *controller) getScalerAdjustment(current int, deployment string) float64
 
 // Given the current error, returns the necessary adjustment for brownout ACL and rate limiting
 func (c *controller) getDimmerAdjustment(backend string, stats map[string]string) int {
-	// The PID controller
+	// The PIController controller
 	response := 0
 
 	if current, ok := stats[c.targets[backend].Target]; ok {
