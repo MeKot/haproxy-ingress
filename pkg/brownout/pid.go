@@ -45,9 +45,11 @@ type PIController struct {
 }
 
 type AdaptivePI struct {
-	Pole    float64 `json:"pole"`
-	RlsPole float64 `json:"rls_pole"`
-	slope   float64
+	oldPole    float64
+	oldRlsPole float64
+	Pole       float64 `json:"pole"`
+	RlsPole    float64 `json:"rls_pole"`
+	slope      float64
 }
 
 type Limits struct {
@@ -91,8 +93,8 @@ func (pid *PIController) Initialise(current float64, goal float64) {
 	if pid.AdaptivePI != nil {
 		pid.isAdaptivePI = true
 		pid.AdaptivePI.slope = 0
-	} else {
-		pid.isAdaptivePI = false
+		pid.AdaptivePI.oldPole = pid.AdaptivePI.Pole
+		pid.AdaptivePI.oldRlsPole = pid.AdaptivePI.RlsPole
 	}
 }
 
@@ -104,8 +106,8 @@ func (pid *PIController) piControlLoop(measure float64, e float64) {
 	pid.AdaptivePI.RlsPole -= math.Pow(pid.AdaptivePI.RlsPole, 2) * math.Pow(pid.current, 2) /
 		(1 + pid.AdaptivePI.RlsPole*math.Pow(pid.current, 2))
 
-	coeff_error := (pid.AdaptivePI.Pole - 1) / pid.AdaptivePI.slope
-	pid.current += coeff_error * e
+	coeffError := (pid.AdaptivePI.Pole - 1) / pid.AdaptivePI.slope
+	pid.current += coeffError * e
 
 }
 
@@ -116,6 +118,13 @@ func (c *PIDController) SetController(newPID PIController) {
 func (c *PIDController) UpdateControllerParams(newParams PIController) {
 	c.pid.P = newParams.P
 	c.pid.Ti = newParams.Ti
+	if newParams.AdaptivePI != nil {
+		c.pid.isAdaptivePI = true
+		if c.pid.AdaptivePI.oldPole != newParams.AdaptivePI.Pole {
+			c.pid.AdaptivePI.Pole = newParams.AdaptivePI.Pole
+			c.pid.AdaptivePI.RlsPole = newParams.AdaptivePI.RlsPole
+		}
+	}
 }
 
 func (c *PIDController) SetAutoTuner(tuner Autotuner) {
@@ -163,8 +172,8 @@ func (c *PIDController) pushMetrics(error float64, deployment string) {
 			c.Metrics.SetControllerParameterValue(c.pid.P, "K", c.MetricLabel, deployment)
 			c.Metrics.SetControllerActionValue(c.pid.P*error, "proportional", c.MetricLabel, deployment)
 			c.Metrics.SetControllerActionValue(c.pid.integralSum, "integral_sum", c.MetricLabel, deployment)
-			c.Metrics.SetControlError(error, c.MetricLabel, deployment)
 		}
+		c.Metrics.SetControlError(error, c.MetricLabel, deployment)
 	} else {
 		glog.Warning("Metrics are null inside the controller")
 	}
