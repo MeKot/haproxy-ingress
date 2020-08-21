@@ -248,7 +248,7 @@ func (c *controller) execApplyACL(backend *hatypes.Backend, adjustment int) {
 func (c *controller) getScalerAdjustment(current float64, deployment string) float64 {
 	c.logger.Info("Scaler goal is %f, current is %f", c.targets[deployment].ScalerTargetValue, current)
 	c.scalers[deployment].SetGoal(c.targets[deployment].ScalerTargetValue)
-	return c.scalers[deployment].Next(current, time.Now().Sub(c.lastScalingUpdate), -1)
+	return c.scalers[deployment].Next(current, time.Now().Sub(c.lastScalingUpdate), 1)
 }
 
 // Given the current error, returns the necessary adjustment for brownout ACL and rate limiting
