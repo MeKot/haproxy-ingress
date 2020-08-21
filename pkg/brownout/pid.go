@@ -16,6 +16,7 @@ type Controller interface {
 	SetController(controller PIController)
 	UpdateControllerParams(newParams PIController)
 	SetAutoTuner(tuner Autotuner)
+	GetMaxOut() float64
 }
 
 type Autotuner struct {
@@ -144,19 +145,12 @@ func (c *PIDController) activateAutoTuning() {
 
 // Runs a simple plain PIController-only control loop
 func (c *PIDController) pidControlLoop(measure float64, e float64, lastUpdate time.Duration) float64 {
-	/*
-	   # Control
-	   d_measure = measure - \
-	       (self._last_measure if self._last_measure is not None else measure)
-	   self._derivative = self._Kd * d_measure / delta_time
-	   self._signal = self._proportional + self._integral + self._derivative
-	   self._last_measure = measure
-	*/
 	// Fixing the sign of the PI action
 	glog.Info("Normal control loop, autotuning disabled")
 	//c.P = (e / math.Abs(e)) * math.Abs(c.P)
 	proportionalAction := c.pid.P * e
 	c.pid.integralSum += c.pid.Ti * e * lastUpdate.Seconds()
+	c.pid.integralSum = math.Min(math.Max(c.pid.integralSum, c.OutLimits.Min), c.OutLimits.Max)
 	prev := c.pid.previousMeasure
 	if prev == 0 {
 		prev = measure
@@ -185,6 +179,7 @@ func (c *PIDController) pushMetrics(error float64, deployment string) {
 			c.Metrics.SetControllerParameterValue(c.pid.AdaptivePI.slope, "Slope", c.MetricLabel, deployment)
 			c.Metrics.SetControllerParameterValue(c.pid.AdaptivePI.Pole, "Pole", c.MetricLabel, deployment)
 			c.Metrics.SetControllerParameterValue(c.pid.AdaptivePI.RlsPole, "RlsPole", c.MetricLabel, deployment)
+			c.Metrics.SetControllerActionValue(c.pid.current, "ControlSignal", c.MetricLabel, deployment)
 		} else {
 			c.Metrics.SetControllerParameterValue(c.pid.Ti, "Ti", c.MetricLabel, deployment)
 			c.Metrics.SetControllerParameterValue(c.pid.P, "K", c.MetricLabel, deployment)
@@ -213,6 +208,7 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 		c.pid.currentLoopCount++
 		return c.pid.current
 	}
+	c.pid.currentLoopCount = 0
 
 	c.Stats.AddMeasurement(current)
 	e := c.getError(c.Stats.GetAverage())
@@ -240,7 +236,9 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 	// Anti-windup
 	c.pid.integralSum = c.pid.current - proportionalAction
 
-	return c.pid.current * c.OutLimits.Max
+	glog.Info(fmt.Sprintf("Controller output is %f for the input %f which is an error of %f", c.pid.current, current,
+		e))
+	return c.pid.current*(c.OutLimits.Max-c.OutLimits.Min) + c.OutLimits.Min
 }
 
 func (c *PIDController) autoTune(e float64, lastUpdate time.Duration, current float64) {
@@ -293,9 +291,13 @@ func (c *PIDController) SetGoal(newGoal float64) {
 
 func (c *PIDController) GetTargetValue() float64 {
 	// Something in the ballpark of 600, which is the target value for the dimmer
-	return ((c.OutLimits.Max-c.OutLimits.Min)*3)/5 + c.OutLimits.Min
+	return 3/5*(c.OutLimits.Max-c.OutLimits.Min) + c.OutLimits.Min
 }
 
 func (c *PIDController) clampOutput() {
-	c.pid.current = math.Min(math.Max(c.OutLimits.Min/c.OutLimits.Max, c.pid.current), 1)
+	c.pid.current = math.Min(math.Max(0, c.pid.current), 1)
+}
+
+func (c *PIDController) GetMaxOut() float64 {
+	return c.OutLimits.Max
 }

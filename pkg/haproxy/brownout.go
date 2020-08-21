@@ -15,7 +15,13 @@ import (
 	"time"
 )
 
-type ControllerType string
+type ControllerInput string
+
+const (
+	DimmerOutput ControllerInput = "dimmer_out"
+	ScalerOutput ControllerInput = "scaler_out"
+	Metric       ControllerInput = "metric"
+)
 
 type Controller interface {
 	Update(backend *hatypes.Backend)
@@ -34,6 +40,8 @@ type TargetConfig struct {
 	DeploymentName              string                `json:"deployment_name"`
 	ScalerMeasurementWindowSize int                   `json:"scaler_measurement_window_size"`
 	DimmerMeasurementWindowSize int                   `json:"dimmer_measurement_window_size"`
+	ScalerInput                 ControllerInput       `json:"scaler_in"`
+	DimmerInput                 ControllerInput       `json:"dimmer_in"`
 	ScalerPID                   brownout.PIController `json:"scaler_pi"`
 	DimmerPID                   brownout.PIController `json:"dimmer_pi"`
 }
@@ -197,15 +205,34 @@ func (c *controller) Update(backend *hatypes.Backend) {
 
 	for deployment, config := range c.targets {
 		c.logger.Info("Considering deployment %q for scaling", config.DeploymentName)
-		// FIXME: Remove the magic 0 from below and add proper deployment reference
 		c.currConfig.brownout.Deployments[config.DeploymentName] =
-			c.getScalerAdjustment(c.currConfig.brownout.Rates[config.Paths[0]], deployment)
+			c.getScalerAdjustment(c.getSclaerInput(stats, backend.Name), deployment)
 
 		c.logger.Info("Set deployment %q to %f replicas", config.DeploymentName,
 			c.currConfig.brownout.Deployments[config.DeploymentName])
 	}
 
 	c.updateDeployments()
+}
+
+func (c *controller) getSclaerInput(stats map[string]string, backend string) float64 {
+	switch c.targets[backend].ScalerInput {
+	case DimmerOutput:
+		for path, rate := range c.currConfig.brownout.Rates {
+			if strings.Contains(path, backend) {
+				return float64(rate) / c.dimmers[backend].GetMaxOut()
+			}
+		}
+		return 0
+	case Metric:
+		res, err := strconv.ParseFloat(stats[c.targets[backend].Target], 64)
+		if err != nil {
+			c.logger.Error("Failed to parse metric value when passing to scaler")
+		}
+		return res
+	}
+	c.logger.Error("Did not match any valid input type for scaler")
+	return 0
 }
 
 func (c *controller) execApplyACL(backend *hatypes.Backend, adjustment int) {
@@ -219,10 +246,18 @@ func (c *controller) execApplyACL(backend *hatypes.Backend, adjustment int) {
 }
 
 // Given the current dimmer status, returns the necessary number of replicas
-func (c *controller) getScalerAdjustment(current int, deployment string) float64 {
-	c.logger.Info("Scaler goal is %f, current is %d", c.dimmers[deployment].GetTargetValue(), current)
-	c.scalers[deployment].SetGoal(c.dimmers[deployment].GetTargetValue())
-	return c.scalers[deployment].Next(float64(current), time.Now().Sub(c.lastScalingUpdate))
+func (c *controller) getScalerAdjustment(current float64, deployment string) float64 {
+	switch c.targets[deployment].ScalerInput {
+	case DimmerOutput:
+		c.logger.Info("Scaler goal is %f, current is %f", c.dimmers[deployment].GetTargetValue(), current)
+		c.scalers[deployment].SetGoal(c.dimmers[deployment].GetTargetValue())
+		break
+	case Metric:
+		c.logger.Info("Scaler goal is %d, current is %f", c.targets[deployment].TargetValue, current)
+		c.scalers[deployment].SetGoal(float64(c.targets[deployment].TargetValue))
+		break
+	}
+	return c.scalers[deployment].Next(current, time.Now().Sub(c.lastScalingUpdate))
 }
 
 // Given the current error, returns the necessary adjustment for brownout ACL and rate limiting
