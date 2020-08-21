@@ -94,7 +94,7 @@ func (pid *PIController) Initialise(current float64, goal float64) {
 	pid.goal = goal
 	if pid.AdaptivePI != nil {
 		pid.isAdaptivePI = true
-		pid.AdaptivePI.slope = 0
+		pid.AdaptivePI.slope = 1
 		pid.AdaptivePI.oldPole = pid.AdaptivePI.Pole
 		pid.AdaptivePI.oldRlsPole = pid.AdaptivePI.RlsPole
 	}
@@ -110,6 +110,7 @@ func (c *PIDController) adaptivePiControlLoop(measure float64, e float64) {
 		(1 + c.pid.AdaptivePI.RlsPole*math.Pow(c.pid.current, 2))
 
 	coeffError := (c.pid.AdaptivePI.Pole - 1) / c.pid.AdaptivePI.slope
+	glog.Info(fmt.Sprintf("The coeffError is %f", coeffError))
 	c.pid.current += coeffError * e
 }
 
@@ -293,6 +294,7 @@ func (c *PIDController) GetTargetValue() float64 {
 }
 
 func (c *PIDController) clampOutput() {
+	glog.Info(fmt.Sprintf("The current output before clamping is %f", c.pid.current))
 	c.pid.current = math.Min(math.Max(c.OutLimits.Min, c.pid.current), c.OutLimits.Max)
 }
 
