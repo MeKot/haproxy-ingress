@@ -142,6 +142,8 @@ func (c *controller) updateControllers() {
 	for depl, conf := range c.targets {
 		c.dimmers[depl].UpdateControllerParams(conf.DimmerPID)
 		c.scalers[depl].UpdateControllerParams(conf.ScalerPID)
+		c.scalers[depl].UpdateOutLimits(brownout.CreateLimits(float64(c.targets[depl].MaxReplicas),
+			float64(c.targets[depl].TargetReplicas)))
 	}
 }
 
@@ -257,7 +259,7 @@ func (c *controller) getScalerAdjustment(current float64, deployment string) flo
 		c.scalers[deployment].SetGoal(float64(c.targets[deployment].TargetValue))
 		break
 	}
-	return c.scalers[deployment].Next(current, time.Now().Sub(c.lastScalingUpdate))
+	return c.scalers[deployment].Next(current, time.Now().Sub(c.lastScalingUpdate), -1)
 }
 
 // Given the current error, returns the necessary adjustment for brownout ACL and rate limiting
@@ -273,7 +275,7 @@ func (c *controller) getDimmerAdjustment(backend string, stats map[string]string
 		c.dimmers[backend].SetGoal(float64(c.targets[backend].TargetValue))
 
 		// Casting to int, as this directly corresponds to the rate for all non-essential endpoints
-		response = c.dimmers[backend].Next(cur, time.Now().Sub(c.lastUpdate))
+		response = c.dimmers[backend].Next(cur, time.Now().Sub(c.lastUpdate), 1)
 	}
 
 	return int(response * float64(c.targets[backend].RequestLimit))
