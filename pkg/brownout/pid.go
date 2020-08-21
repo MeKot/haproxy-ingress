@@ -214,22 +214,22 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 	c.Stats.AddMeasurement(current)
 	e := c.getError(c.Stats.GetAverage())
 
-	if c.AutoTuningEnabled {
-		c.autoTuner.stepCounter++
-		if !c.autoTuner.AutoTuningActive && math.Abs(e) > c.autoTuner.AutoTuningThreshold {
-			c.activateAutoTuning()
-		}
-	}
+	//if c.AutoTuningEnabled {
+	//	c.autoTuner.stepCounter++
+	//	if !c.autoTuner.AutoTuningActive && math.Abs(e) > c.autoTuner.AutoTuningThreshold {
+	//		c.activateAutoTuning()
+	//	}
+	//}
 
-	if c.AutoTuningEnabled && c.autoTuner.AutoTuningActive {
-		c.autoTune(e, lastUpdate, c.Stats.GetAverage())
+	//if c.AutoTuningEnabled && c.autoTuner.AutoTuningActive {
+	//	c.autoTune(e, lastUpdate, c.Stats.GetAverage())
+	//} else {
+	if c.pid.isAdaptivePI {
+		c.adaptivePiControlLoop(current, e)
 	} else {
-		if c.pid.isAdaptivePI {
-			c.adaptivePiControlLoop(current, e)
-		} else {
-			c.pidControlLoop(current, e, lastUpdate)
-		}
+		c.pidControlLoop(current, e, lastUpdate)
 	}
+	//}
 
 	c.clampOutput()
 	c.pushMetrics(e, c.DeploymentName)
