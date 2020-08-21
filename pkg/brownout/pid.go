@@ -190,8 +190,10 @@ func (c *PIDController) pushMetrics(error float64, deployment string) {
 		} else {
 			c.Metrics.SetControllerParameterValue(c.pid.Ti, "Ti", c.MetricLabel, deployment)
 			c.Metrics.SetControllerParameterValue(c.pid.P, "K", c.MetricLabel, deployment)
+			c.Metrics.SetControllerParameterValue(c.pid.D, "D", c.MetricLabel, deployment)
 			c.Metrics.SetControllerActionValue(c.pid.P*error, "proportional", c.MetricLabel, deployment)
 			c.Metrics.SetControllerActionValue(c.pid.integralSum, "integral_sum", c.MetricLabel, deployment)
+			c.Metrics.SetControllerActionValue(c.pid.current, "ControlSignal", c.MetricLabel, deployment)
 		}
 		c.Metrics.SetControlError(error, c.MetricLabel, deployment)
 	} else {
