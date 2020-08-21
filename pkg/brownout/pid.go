@@ -127,6 +127,8 @@ func (c *PIDController) UpdateControllerParams(newParams PIController) {
 			c.pid.AdaptivePI.Pole = newParams.AdaptivePI.Pole
 			c.pid.AdaptivePI.RlsPole = newParams.AdaptivePI.RlsPole
 		}
+	} else {
+		c.pid.isAdaptivePI = false
 	}
 }
 
@@ -204,7 +206,7 @@ func (c *PIDController) getError(current float64) float64 {
 }
 
 func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 {
-	if c.pid.currentLoopCount != c.pid.ControlLoopPeriod {
+	if c.pid.currentLoopCount < c.pid.ControlLoopPeriod {
 		c.pid.currentLoopCount++
 		return c.pid.current
 	}
@@ -220,21 +222,18 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 		}
 	}
 
-	proportionalAction := 0.0
 	if c.AutoTuningEnabled && c.autoTuner.AutoTuningActive {
 		c.autoTune(e, lastUpdate, c.Stats.GetAverage())
 	} else {
 		if c.pid.isAdaptivePI {
 			c.pid.piControlLoop(current, e)
+		} else {
+			c.pidControlLoop(current, e, lastUpdate)
 		}
-		proportionalAction = c.pidControlLoop(current, e, lastUpdate)
 	}
 
 	c.clampOutput()
 	c.pushMetrics(e, c.DeploymentName)
-
-	// Anti-windup
-	c.pid.integralSum = c.pid.current - proportionalAction
 
 	glog.Info(fmt.Sprintf("Controller output is %f for the input %f which is an error of %f", c.pid.current, current,
 		e))
