@@ -100,17 +100,17 @@ func (pid *PIController) Initialise(current float64, goal float64) {
 	}
 }
 
-func (pid *PIController) piControlLoop(measure float64, e float64) {
+func (c *PIDController) adaptivePiControlLoop(measure float64, e float64) {
 	glog.Info("Adaptive PI control loop")
-	estimationError := pid.current*pid.AdaptivePI.slope - measure
-	pid.P = pid.AdaptivePI.RlsPole * pid.current /
-		(1 + pid.AdaptivePI.RlsPole*math.Pow(pid.current, 2))
-	pid.AdaptivePI.slope -= pid.P * estimationError
-	pid.AdaptivePI.RlsPole -= math.Pow(pid.AdaptivePI.RlsPole, 2) * math.Pow(pid.current, 2) /
-		(1 + pid.AdaptivePI.RlsPole*math.Pow(pid.current, 2))
+	estimationError := c.pid.current*c.pid.AdaptivePI.slope - measure
+	c.pid.P = c.pid.AdaptivePI.RlsPole * c.pid.current /
+		(1 + c.pid.AdaptivePI.RlsPole*math.Pow(c.pid.current, 2))
+	c.pid.AdaptivePI.slope -= c.pid.P * estimationError
+	c.pid.AdaptivePI.RlsPole -= math.Pow(c.pid.AdaptivePI.RlsPole, 2) * math.Pow(c.pid.current, 2) /
+		(1 + c.pid.AdaptivePI.RlsPole*math.Pow(c.pid.current, 2))
 
-	coeffError := (pid.AdaptivePI.Pole - 1) / pid.AdaptivePI.slope
-	pid.current += coeffError * e
+	coeffError := (c.pid.AdaptivePI.Pole - 1) / c.pid.AdaptivePI.slope
+	c.pid.current += coeffError * e
 
 }
 
@@ -226,7 +226,7 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 		c.autoTune(e, lastUpdate, c.Stats.GetAverage())
 	} else {
 		if c.pid.isAdaptivePI {
-			c.pid.piControlLoop(current, e)
+			c.adaptivePiControlLoop(current, e)
 		} else {
 			c.pidControlLoop(current, e, lastUpdate)
 		}
