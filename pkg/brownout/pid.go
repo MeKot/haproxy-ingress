@@ -111,7 +111,6 @@ func (c *PIDController) adaptivePiControlLoop(measure float64, e float64) {
 
 	coeffError := (c.pid.AdaptivePI.Pole - 1) / c.pid.AdaptivePI.slope
 	c.pid.current += coeffError * e
-
 }
 
 func (c *PIDController) SetController(newPID PIController) {
@@ -237,7 +236,7 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 
 	glog.Info(fmt.Sprintf("Controller output is %f for the input %f which is an error of %f", c.pid.current, current,
 		e))
-	return c.pid.current*(c.OutLimits.Max-c.OutLimits.Min) + c.OutLimits.Min
+	return c.pid.current
 }
 
 func (c *PIDController) autoTune(e float64, lastUpdate time.Duration, current float64) {
@@ -294,7 +293,7 @@ func (c *PIDController) GetTargetValue() float64 {
 }
 
 func (c *PIDController) clampOutput() {
-	c.pid.current = math.Min(math.Max(0, c.pid.current), 1)
+	c.pid.current = math.Min(math.Max(c.OutLimits.Min, c.pid.current), c.OutLimits.Max)
 }
 
 func (c *PIDController) GetMaxOut() float64 {

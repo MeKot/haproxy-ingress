@@ -148,7 +148,7 @@ func (c *controller) updateControllers() {
 func (c *controller) createDimmerController(conf TargetConfig, deployment string) {
 	conf.DimmerPID.Initialise(1.0, float64(conf.TargetValue))
 	c.dimmers[deployment] = &brownout.PIDController{
-		OutLimits:           brownout.CreateLimits(float64(conf.RequestLimit), 1),
+		OutLimits:           brownout.CreateLimits(1, 0),
 		ProcessOutputLimits: brownout.CreateLimits(1e6, -1e6),
 		Stats:               brownout.CreateStatsKeeper(conf.DimmerMeasurementWindowSize),
 		AutoTuningEnabled:   false,
@@ -263,7 +263,7 @@ func (c *controller) getScalerAdjustment(current float64, deployment string) flo
 // Given the current error, returns the necessary adjustment for brownout ACL and rate limiting
 func (c *controller) getDimmerAdjustment(backend string, stats map[string]string) int {
 	// The PIController controller
-	response := 0
+	response := 0.0
 
 	if current, ok := stats[c.targets[backend].Target]; ok {
 		cur, err := strconv.ParseFloat(current, 64)
@@ -273,10 +273,10 @@ func (c *controller) getDimmerAdjustment(backend string, stats map[string]string
 		c.dimmers[backend].SetGoal(float64(c.targets[backend].TargetValue))
 
 		// Casting to int, as this directly corresponds to the rate for all non-essential endpoints
-		response = int(c.dimmers[backend].Next(cur, time.Now().Sub(c.lastUpdate)))
+		response = c.dimmers[backend].Next(cur, time.Now().Sub(c.lastUpdate))
 	}
 
-	return response
+	return int(response * float64(c.targets[backend].RequestLimit))
 }
 
 // Sends the stats query to HAProxy for a given backend and returns a map of key-value stats
