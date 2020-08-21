@@ -103,9 +103,9 @@ func (pid *PIController) Initialise(current float64, goal float64) {
 func (c *PIDController) adaptivePiControlLoop(measure float64, e float64) {
 	glog.Info("Adaptive PI control loop")
 	estimationError := c.pid.current*c.pid.AdaptivePI.slope - measure
-	c.pid.P = c.pid.AdaptivePI.RlsPole * c.pid.current /
+	K := c.pid.AdaptivePI.RlsPole * c.pid.current /
 		(1 + c.pid.AdaptivePI.RlsPole*math.Pow(c.pid.current, 2))
-	c.pid.AdaptivePI.slope -= c.pid.P * estimationError
+	c.pid.AdaptivePI.slope -= K * estimationError
 	c.pid.AdaptivePI.RlsPole -= math.Pow(c.pid.AdaptivePI.RlsPole, 2) * math.Pow(c.pid.current, 2) /
 		(1 + c.pid.AdaptivePI.RlsPole*math.Pow(c.pid.current, 2))
 
