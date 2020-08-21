@@ -33,7 +33,8 @@ type TargetConfig struct {
 	Paths                       []string              `json:"paths"`
 	RequestLimit                int                   `json:"request_limit"`
 	Target                      string                `json:"target"`
-	TargetValue                 int                   `json:"target_value"`
+	DimmerTargetValue           int                   `json:"dimmer_target_value"`
+	ScalerTargetValue           float64               `json:"scaler_target_value"`
 	TargetReplicas              int                   `json:"target_replicas"`
 	MaxReplicas                 int                   `json:"max_replicas"`
 	DeploymentNamespace         string                `json:"deployment_namespace"`
@@ -148,7 +149,7 @@ func (c *controller) updateControllers() {
 }
 
 func (c *controller) createDimmerController(conf TargetConfig, deployment string) {
-	conf.DimmerPID.Initialise(1.0, float64(conf.TargetValue))
+	conf.DimmerPID.Initialise(1.0, float64(conf.DimmerTargetValue))
 	c.dimmers[deployment] = &brownout.PIDController{
 		OutLimits:           brownout.CreateLimits(1, 0),
 		ProcessOutputLimits: brownout.CreateLimits(1e6, -1e6),
@@ -192,7 +193,8 @@ func (c *controller) Update(backend *hatypes.Backend) {
 		return
 	}
 
-	c.execApplyACL(backend, c.getDimmerAdjustment(backend.Name, stats))
+	dimmerAdjustment := c.getDimmerAdjustment(backend.Name, stats)
+	c.execApplyACL(backend, int(dimmerAdjustment*float64(c.targets[backend.Name].RequestLimit)))
 	if c.needsReload {
 		c.logger.InfoV(2, "Queued updates to be written to disks on next reload")
 		c.needsReload = false
@@ -208,7 +210,7 @@ func (c *controller) Update(backend *hatypes.Backend) {
 	for deployment, config := range c.targets {
 		c.logger.Info("Considering deployment %q for scaling", config.DeploymentName)
 		c.currConfig.brownout.Deployments[config.DeploymentName] =
-			c.getScalerAdjustment(c.getSclaerInput(stats, backend.Name), deployment)
+			c.getScalerAdjustment(c.getSclaerInput(stats, backend.Name, dimmerAdjustment), deployment)
 
 		c.logger.Info("Set deployment %q to %f replicas", config.DeploymentName,
 			c.currConfig.brownout.Deployments[config.DeploymentName])
@@ -217,15 +219,10 @@ func (c *controller) Update(backend *hatypes.Backend) {
 	c.updateDeployments()
 }
 
-func (c *controller) getSclaerInput(stats map[string]string, backend string) float64 {
+func (c *controller) getSclaerInput(stats map[string]string, backend string, dimmerAdj float64) float64 {
 	switch c.targets[backend].ScalerInput {
 	case DimmerOutput:
-		for path, rate := range c.currConfig.brownout.Rates {
-			if strings.Contains(path, backend) {
-				return float64(rate) / c.dimmers[backend].GetMaxOut()
-			}
-		}
-		return 0
+		return dimmerAdj
 	case Metric:
 		res, err := strconv.ParseFloat(stats[c.targets[backend].Target], 64)
 		if err != nil {
@@ -249,21 +246,13 @@ func (c *controller) execApplyACL(backend *hatypes.Backend, adjustment int) {
 
 // Given the current dimmer status, returns the necessary number of replicas
 func (c *controller) getScalerAdjustment(current float64, deployment string) float64 {
-	switch c.targets[deployment].ScalerInput {
-	case DimmerOutput:
-		c.logger.Info("Scaler goal is %f, current is %f", c.dimmers[deployment].GetTargetValue(), current)
-		c.scalers[deployment].SetGoal(c.dimmers[deployment].GetTargetValue())
-		break
-	case Metric:
-		c.logger.Info("Scaler goal is %d, current is %f", c.targets[deployment].TargetValue, current)
-		c.scalers[deployment].SetGoal(float64(c.targets[deployment].TargetValue))
-		break
-	}
+	c.logger.Info("Scaler goal is %f, current is %f", c.targets[deployment].ScalerTargetValue, current)
+	c.scalers[deployment].SetGoal(c.targets[deployment].ScalerTargetValue)
 	return c.scalers[deployment].Next(current, time.Now().Sub(c.lastScalingUpdate), -1)
 }
 
 // Given the current error, returns the necessary adjustment for brownout ACL and rate limiting
-func (c *controller) getDimmerAdjustment(backend string, stats map[string]string) int {
+func (c *controller) getDimmerAdjustment(backend string, stats map[string]string) float64 {
 	// The PIController controller
 	response := 0.0
 
@@ -272,13 +261,13 @@ func (c *controller) getDimmerAdjustment(backend string, stats map[string]string
 		if err != nil {
 			c.logger.Error("Failed to parse an int from %q", current)
 		}
-		c.dimmers[backend].SetGoal(float64(c.targets[backend].TargetValue))
+		c.dimmers[backend].SetGoal(float64(c.targets[backend].DimmerTargetValue))
 
 		// Casting to int, as this directly corresponds to the rate for all non-essential endpoints
 		response = c.dimmers[backend].Next(cur, time.Now().Sub(c.lastUpdate), 1)
 	}
 
-	return int(response * float64(c.targets[backend].RequestLimit))
+	return response
 }
 
 // Sends the stats query to HAProxy for a given backend and returns a map of key-value stats

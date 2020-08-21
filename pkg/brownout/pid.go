@@ -12,7 +12,6 @@ import (
 type Controller interface {
 	Next(current float64, lastUpdate time.Duration, signCorr int) float64
 	SetGoal(newGoal float64)
-	GetTargetValue() float64
 	SetController(controller PIController)
 	UpdateControllerParams(newParams PIController)
 	SetAutoTuner(tuner Autotuner)
@@ -292,11 +291,6 @@ func (c *PIDController) autoTune(e float64, lastUpdate time.Duration, current fl
 
 func (c *PIDController) SetGoal(newGoal float64) {
 	c.pid.goal = newGoal
-}
-
-func (c *PIDController) GetTargetValue() float64 {
-	// Something in the ballpark of 600, which is the target value for the dimmer
-	return 3/5*(c.OutLimits.Max-c.OutLimits.Min) + c.OutLimits.Min
 }
 
 func (c *PIDController) clampOutput() {
