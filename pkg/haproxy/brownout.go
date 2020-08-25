@@ -142,7 +142,7 @@ func (i *instance) GetController() Controller {
 	for deployment, conf := range c.Targets {
 		out.createDimmerController(conf, deployment)
 		out.createScalerController(conf, deployment)
-		out.scalingParams[deployment] = ScalerParams{
+		out.scalingParams[conf.DeploymentName] = ScalerParams{
 			Hysteresis: time.Second * time.Duration(conf.ScalerHysteresys),
 			Threshold:  conf.ScalingThreshold,
 		}
@@ -366,6 +366,7 @@ func (c *controller) updateDeployments() {
 			continue
 		}
 
+		c.logger.Info(fmt.Sprintf("The scaler params are %+v for deployment %q", c.scalingParams[depl], depl))
 		desired := c.getReplicaCount(int(*d.Spec.Replicas), repl, c.scalingParams[depl].Threshold)
 		c.logger.Info("getReplicaCount returned %d", desired)
 
