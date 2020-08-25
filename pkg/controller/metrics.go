@@ -32,7 +32,7 @@ type metrics struct {
 	updateSuccessGauge      *prometheus.GaugeVec
 	certExpireGauge         *prometheus.GaugeVec
 	certSigningCounter      *prometheus.CounterVec
-	backendResponseTimes    *prometheus.HistogramVec
+	backendResponseTimes    *prometheus.GaugeVec
 	backendFeaturesDisabled *prometheus.GaugeVec
 	backendNumberOfPods     *prometheus.GaugeVec
 	controlError            *prometheus.GaugeVec
@@ -109,12 +109,11 @@ func createMetrics(bucketsResponseTime []float64) *metrics {
 			},
 			[]string{"domains", "reason", "success"},
 		),
-		backendResponseTimes: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
+		backendResponseTimes: prometheus.NewGaugeVec(
+			prometheus.GaugeOpts{
 				Namespace: namespace,
 				Name:      "backend_response_time_seconds",
 				Help:      "Response times of the backends",
-				Buckets:   []float64{0.3, 0.6, 1, 2, 3, 4, 5},
 			},
 			[]string{"backend"},
 		),
@@ -242,7 +241,7 @@ func (m *metrics) SetBrownOutFeatureStatus(feature string, currentValue float64,
 }
 
 func (m *metrics) SetBackendResponseTime(backend string, duration time.Duration) {
-	m.backendResponseTimes.WithLabelValues(backend).Observe(duration.Seconds())
+	m.backendResponseTimes.WithLabelValues(backend).Set(duration.Seconds())
 }
 
 func (m *metrics) SetBackendNumberOfPods(backend string, pods int32) {
