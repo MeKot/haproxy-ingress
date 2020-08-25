@@ -276,6 +276,7 @@ func (c *controller) getDimmerAdjustment(backend string, stats map[string]string
 		cur, err := strconv.ParseFloat(current, 64)
 		if err != nil {
 			c.logger.Error("Failed to parse an int from %q", current)
+			return c.dimmers[backend].GetPrevious()
 		}
 		c.dimmers[backend].SetGoal(float64(c.targets[backend].DimmerTargetValue))
 

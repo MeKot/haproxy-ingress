@@ -17,6 +17,7 @@ type Controller interface {
 	SetAutoTuner(tuner Autotuner)
 	GetMaxOut() float64
 	UpdateOutLimits(limits *Limits)
+	GetPrevious() float64
 }
 
 type Autotuner struct {
@@ -312,4 +313,8 @@ func (c *PIDController) clampOutput() {
 
 func (c *PIDController) GetMaxOut() float64 {
 	return c.OutLimits.Max
+}
+
+func (c *PIDController) GetPrevious() float64 {
+	return c.pid.current
 }
