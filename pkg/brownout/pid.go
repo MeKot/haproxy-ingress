@@ -47,11 +47,12 @@ type PIController struct {
 }
 
 type AdaptivePI struct {
-	oldPole    float64
-	oldRlsPole float64
-	Pole       float64 `json:"pole"`
-	RlsPole    float64 `json:"rls_pole"`
-	slope      float64
+	oldPole          float64
+	oldRlsPole       float64
+	Pole             float64 `json:"pole"`
+	RlsPole          float64 `json:"rls_pole"`
+	ForgettingFactor float64 `json:"forgetting_factor"`
+	slope            float64
 }
 
 type Limits struct {
@@ -104,11 +105,11 @@ func (c *PIDController) adaptivePiControlLoop(measure float64, e float64, signCo
 	glog.Info("Adaptive PI control loop")
 	estimationError := c.pid.current*c.pid.AdaptivePI.slope - measure
 	K := c.pid.AdaptivePI.RlsPole * c.pid.current /
-		(1 + c.pid.AdaptivePI.RlsPole*math.Pow(c.pid.current, 2))
+		(c.pid.AdaptivePI.ForgettingFactor + c.pid.AdaptivePI.RlsPole*math.Pow(c.pid.current, 2))
 	glog.Info(fmt.Sprintf("The estimation error is %f and the K is %f", estimationError, K))
 	c.pid.AdaptivePI.slope -= K * estimationError
 	c.pid.AdaptivePI.RlsPole -= math.Pow(c.pid.AdaptivePI.RlsPole, 2) * math.Pow(c.pid.current, 2) /
-		(1 + c.pid.AdaptivePI.RlsPole*math.Pow(c.pid.current, 2))
+		(c.pid.AdaptivePI.ForgettingFactor + c.pid.AdaptivePI.RlsPole*math.Pow(c.pid.current, 2))
 
 	coeffError := float64(signCorr) * (1 - c.pid.AdaptivePI.Pole) / c.pid.AdaptivePI.slope
 	glog.Info(fmt.Sprintf("The coeffError is %f", coeffError))
@@ -124,9 +125,11 @@ func (c *PIDController) UpdateControllerParams(newParams PIController) {
 	c.pid.Ti = newParams.Ti
 	if newParams.AdaptivePI != nil {
 		c.pid.isAdaptivePI = true
-		if c.pid.AdaptivePI.oldPole != newParams.AdaptivePI.Pole {
+		if c.pid.AdaptivePI.oldPole != newParams.AdaptivePI.Pole || c.pid.AdaptivePI.ForgettingFactor != newParams.
+			AdaptivePI.ForgettingFactor {
 			c.pid.AdaptivePI.Pole = newParams.AdaptivePI.Pole
 			c.pid.AdaptivePI.RlsPole = newParams.AdaptivePI.RlsPole
+			c.pid.AdaptivePI.ForgettingFactor = newParams.AdaptivePI.ForgettingFactor
 		}
 	} else {
 		c.pid.isAdaptivePI = false
