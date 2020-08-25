@@ -35,6 +35,8 @@ type TargetConfig struct {
 	Target                      string                `json:"target"`
 	DimmerTargetValue           int                   `json:"dimmer_target_value"`
 	ScalerTargetValue           float64               `json:"scaler_target_value"`
+	ScalingThreshold            float64               `json:"scaler_threshold"`
+	ScalerHysteresys            float64               `json:"scaler_hysteresis"`
 	TargetReplicas              int                   `json:"target_replicas"`
 	MaxReplicas                 int                   `json:"max_replicas"`
 	DeploymentNamespace         string                `json:"deployment_namespace"`
@@ -51,13 +53,16 @@ type BrownoutConfig struct {
 	Targets map[string]TargetConfig `json:"targets"`
 }
 
+type ScalerParams struct {
+	Threshold  float64
+	Hysteresis time.Duration
+}
+
 // controller used to perform runtime updates
 type controller struct {
 	reloadInterval    time.Duration
 	lastUpdate        time.Time
 	lastScalingUpdate time.Time
-	scalingInterval   time.Duration
-	scalingHysteris   time.Duration
 	needsReload       bool
 	logger            types.Logger
 	targets           map[string]TargetConfig
@@ -65,6 +70,7 @@ type controller struct {
 	socket            string
 	metrics           types.Metrics
 	currConfig        *config
+	scalingParams     map[string]ScalerParams
 	dimmers           map[string]brownout.Controller
 	scalers           map[string]brownout.Controller
 }
@@ -81,6 +87,9 @@ func (i *instance) GetController() Controller {
 	i.logger.Info("Unmarshalled to %+v", c)
 
 	for _, configuration := range c.Targets {
+		if configuration.ScalingThreshold == 0 {
+			configuration.ScalingThreshold = 0.6
+		}
 		i.logger.Info("Initialising the global rates map")
 		// Default rate limit is 100000 requests per minute
 		for _, path := range configuration.Paths {
@@ -120,20 +129,23 @@ func (i *instance) GetController() Controller {
 		logger:            i.logger,
 		lastUpdate:        time.Now(),
 		lastScalingUpdate: time.Now(),
-		scalingInterval:   time.Minute * 1,
-		scalingHysteris:   time.Minute * 2,
 		reloadInterval:    time.Second * 10,
 		targets:           c.Targets,
 		cmd:               utils.HAProxyCommandWithReturn,
 		socket:            i.curConfig.Global().AdminSocket,
 		metrics:           i.metrics,
 		currConfig:        i.curConfig.(*config),
+		scalingParams:     make(map[string]ScalerParams),
 		dimmers:           make(map[string]brownout.Controller),
 		scalers:           make(map[string]brownout.Controller),
 	}
 	for deployment, conf := range c.Targets {
 		out.createDimmerController(conf, deployment)
 		out.createScalerController(conf, deployment)
+		out.scalingParams[deployment] = ScalerParams{
+			Hysteresis: time.Second * time.Duration(conf.ScalerHysteresys),
+			Threshold:  conf.ScalingThreshold,
+		}
 	}
 	return out
 }
@@ -202,8 +214,7 @@ func (c *controller) Update(backend *hatypes.Backend) {
 	c.lastUpdate = time.Now()
 
 	// If we have scaled recently, we need to wait before scaling again
-	if c.lastScalingUpdate.Add(c.scalingHysteris).After(time.Now()) || c.lastScalingUpdate.Add(c.scalingInterval).
-		After(time.Now()) {
+	if c.lastScalingUpdate.Add(c.scalingParams[backend.Name].Hysteresis).After(time.Now()) {
 		return
 	}
 
@@ -355,7 +366,7 @@ func (c *controller) updateDeployments() {
 			continue
 		}
 
-		desired := c.getReplicaCount(int(*d.Spec.Replicas), repl)
+		desired := c.getReplicaCount(int(*d.Spec.Replicas), repl, c.scalingParams[depl].Threshold)
 		c.logger.Info("getReplicaCount returned %d", desired)
 
 		if int(*d.Spec.Replicas) != desired {
@@ -374,12 +385,12 @@ func (c *controller) updateDeployments() {
 	}
 }
 
-func (c *controller) getReplicaCount(current int, scaler float64) int {
+func (c *controller) getReplicaCount(current int, scaler float64, threshold float64) int {
 	diff := float64(current) - scaler
-	c.logger.Info("Current is %d, scaler is %f", current, scaler)
-	if diff >= 0.6 {
+	c.logger.Info("Current is %d, scaler is %f and scaling threshold is %f", current, scaler, threshold)
+	if diff >= threshold {
 		return int(scaler)
-	} else if diff <= -0.6 {
+	} else if diff <= -threshold {
 		return int(scaler + 0.5)
 	} else {
 		return current
