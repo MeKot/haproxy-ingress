@@ -10,7 +10,7 @@ import (
 )
 
 type Controller interface {
-	Next(current float64, lastUpdate time.Duration, signCorr int) float64
+	Next(current float64, lastUpdate time.Duration) float64
 	SetGoal(newGoal float64)
 	SetController(controller PIController)
 	UpdateControllerParams(newParams PIController)
@@ -52,6 +52,7 @@ type AdaptivePI struct {
 	Pole             float64 `json:"pole"`
 	RlsPole          float64 `json:"rls_pole"`
 	ForgettingFactor float64 `json:"forgetting_factor"`
+	SignCorrection   int     `json:"sign_correction"`
 	slope            float64
 }
 
@@ -101,10 +102,13 @@ func (pid *PIController) Initialise(current float64, goal float64) {
 		if pid.AdaptivePI.ForgettingFactor == 0 {
 			pid.AdaptivePI.ForgettingFactor = 1
 		}
+		if pid.AdaptivePI.SignCorrection == 0 {
+			pid.AdaptivePI.SignCorrection = 1
+		}
 	}
 }
 
-func (c *PIDController) adaptivePiControlLoop(measure float64, e float64, signCorr int) {
+func (c *PIDController) adaptivePiControlLoop(measure float64, e float64) {
 	glog.Info("Adaptive PI control loop")
 	estimationError := c.pid.current*c.pid.AdaptivePI.slope - measure
 	K := c.pid.AdaptivePI.RlsPole * c.pid.current /
@@ -114,7 +118,7 @@ func (c *PIDController) adaptivePiControlLoop(measure float64, e float64, signCo
 	c.pid.AdaptivePI.RlsPole -= math.Pow(c.pid.AdaptivePI.RlsPole, 2) * math.Pow(c.pid.current, 2) /
 		(c.pid.AdaptivePI.ForgettingFactor + c.pid.AdaptivePI.RlsPole*math.Pow(c.pid.current, 2))
 
-	coeffError := float64(signCorr) * (1 - c.pid.AdaptivePI.Pole) / c.pid.AdaptivePI.slope
+	coeffError := float64(c.pid.AdaptivePI.SignCorrection) * (1 - c.pid.AdaptivePI.Pole) / c.pid.AdaptivePI.slope
 	glog.Info(fmt.Sprintf("The coeffError is %f", coeffError))
 	c.pid.current += coeffError * e
 }
@@ -218,7 +222,7 @@ func (c *PIDController) getError(current float64) float64 {
 	return c.pid.goal - current
 }
 
-func (c *PIDController) Next(current float64, lastUpdate time.Duration, signCorr int) float64 {
+func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 {
 	if c.pid.currentLoopCount < c.pid.ControlLoopPeriod {
 		c.pid.currentLoopCount++
 		return c.pid.current
@@ -239,7 +243,7 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration, signCorr
 	//	c.autoTune(e, lastUpdate, c.Stats.GetAverage())
 	//} else {
 	if c.pid.isAdaptivePI {
-		c.adaptivePiControlLoop(current, e, signCorr)
+		c.adaptivePiControlLoop(current, e)
 	} else {
 		c.pidControlLoop(current, e, lastUpdate)
 	}
