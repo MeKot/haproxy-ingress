@@ -36,7 +36,7 @@ type TargetConfig struct {
 	DimmerTargetValue           int                   `json:"dimmer_target_value"`
 	ScalerTargetValue           float64               `json:"scaler_target_value"`
 	ScalingThreshold            float64               `json:"scaler_threshold"`
-	ScalerHysteresys            float64               `json:"scaler_hysteresis"`
+	ScalerHysteresys            int                   `json:"scaler_hysteresis"`
 	TargetReplicas              int                   `json:"target_replicas"`
 	MaxReplicas                 int                   `json:"max_replicas"`
 	DeploymentNamespace         string                `json:"deployment_namespace"`
@@ -142,8 +142,13 @@ func (i *instance) GetController() Controller {
 	for deployment, conf := range c.Targets {
 		out.createDimmerController(conf, deployment)
 		out.createScalerController(conf, deployment)
+		dur, e := time.ParseDuration(fmt.Sprintf("%ds", conf.ScalerHysteresys))
+		if e != nil {
+			i.logger.Info(fmt.Sprintf("Failed to parse duration, setting to 60s"))
+			dur = time.Second * 60
+		}
 		out.scalingParams[conf.DeploymentName] = ScalerParams{
-			Hysteresis: time.Second * time.Duration(conf.ScalerHysteresys),
+			Hysteresis: dur,
 			Threshold:  conf.ScalingThreshold,
 		}
 	}
