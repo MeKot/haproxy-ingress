@@ -37,6 +37,7 @@ type TargetConfig struct {
 	ScalerTargetValue           float64               `json:"scaler_target_value"`
 	ScalingThreshold            float64               `json:"scaler_threshold"`
 	ScalerHysteresys            float64               `json:"scaler_hysteresis"`
+	ScalerSignCorrection        int                   `json:"scaler_sign_correction"`
 	TargetReplicas              int                   `json:"target_replicas"`
 	MaxReplicas                 int                   `json:"max_replicas"`
 	DeploymentNamespace         string                `json:"deployment_namespace"`
@@ -54,8 +55,9 @@ type BrownoutConfig struct {
 }
 
 type ScalerParams struct {
-	Threshold  float64
-	Hysteresis time.Duration
+	Threshold      float64
+	Hysteresis     time.Duration
+	SignCorrection int
 }
 
 // controller used to perform runtime updates
@@ -143,8 +145,9 @@ func (i *instance) GetController() Controller {
 		out.createDimmerController(conf, deployment)
 		out.createScalerController(conf, deployment)
 		out.scalingParams[deployment] = ScalerParams{
-			Hysteresis: time.Second * time.Duration(conf.ScalerHysteresys),
-			Threshold:  conf.ScalingThreshold,
+			Hysteresis:     time.Second * time.Duration(conf.ScalerHysteresys),
+			Threshold:      conf.ScalingThreshold,
+			SignCorrection: conf.ScalerSignCorrection,
 		}
 	}
 	return out
@@ -259,7 +262,7 @@ func (c *controller) execApplyACL(backend *hatypes.Backend, adjustment int) {
 func (c *controller) getScalerAdjustment(current float64, deployment string) float64 {
 	c.logger.Info("Scaler goal is %f, current is %f", c.targets[deployment].ScalerTargetValue, current)
 	c.scalers[deployment].SetGoal(c.targets[deployment].ScalerTargetValue)
-	return c.scalers[deployment].Next(current, time.Now().Sub(c.lastScalingUpdate), 1)
+	return c.scalers[deployment].Next(current, time.Now().Sub(c.lastScalingUpdate), c.scalingParams[deployment].SignCorrection)
 }
 
 // Given the current error, returns the necessary adjustment for brownout ACL and rate limiting
