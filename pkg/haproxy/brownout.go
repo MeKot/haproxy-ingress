@@ -129,7 +129,7 @@ func (i *instance) GetController() Controller {
 		logger:            i.logger,
 		lastUpdate:        time.Now(),
 		lastScalingUpdate: time.Now(),
-		reloadInterval:    time.Second * 10,
+		reloadInterval:    time.Second * 2,
 		targets:           c.Targets,
 		cmd:               utils.HAProxyCommandWithReturn,
 		socket:            i.curConfig.Global().AdminSocket,
