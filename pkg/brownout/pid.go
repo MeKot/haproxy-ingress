@@ -98,6 +98,9 @@ func (pid *PIController) Initialise(current float64, goal float64) {
 		pid.AdaptivePI.slope = 1
 		pid.AdaptivePI.oldPole = pid.AdaptivePI.Pole
 		pid.AdaptivePI.oldRlsPole = pid.AdaptivePI.RlsPole
+		if pid.AdaptivePI.ForgettingFactor == 0 {
+			pid.AdaptivePI.ForgettingFactor = 1
+		}
 	}
 }
 
