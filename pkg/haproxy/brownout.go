@@ -50,7 +50,8 @@ type TargetConfig struct {
 }
 
 type BrownoutConfig struct {
-	Targets map[string]TargetConfig `json:"targets"`
+	ReloadInterval int                     `json:"reload_interval"`
+	Targets        map[string]TargetConfig `json:"targets"`
 }
 
 type ScalerParams struct {
@@ -124,12 +125,13 @@ func (i *instance) GetController() Controller {
 		return i.brownout
 	}
 
+	reloadInterval, _ := time.ParseDuration(fmt.Sprintf("%ds", c.ReloadInterval))
 	out := &controller{
 		needsReload:       false,
 		logger:            i.logger,
 		lastUpdate:        time.Now(),
 		lastScalingUpdate: time.Now(),
-		reloadInterval:    time.Second * 2,
+		reloadInterval:    reloadInterval,
 		targets:           c.Targets,
 		cmd:               utils.HAProxyCommandWithReturn,
 		socket:            i.curConfig.Global().AdminSocket,
@@ -276,7 +278,12 @@ func (c *controller) getDimmerAdjustment(backend string, stats map[string]string
 		cur, err := strconv.ParseFloat(current, 64)
 		if err != nil {
 			c.logger.Error("Failed to parse an int from %q", current)
-			return c.dimmers[backend].GetPrevious()
+			c.logger.Error(fmt.Sprintf("The dimmer for %q is %+v", backend, c.dimmers[backend]))
+			dimmer, ok := c.dimmers[backend]
+			if !ok {
+				return 0
+			}
+			return dimmer.GetPrevious()
 		}
 		c.dimmers[backend].SetGoal(float64(c.targets[backend].DimmerTargetValue))
 
