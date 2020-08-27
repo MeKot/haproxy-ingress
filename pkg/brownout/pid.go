@@ -109,16 +109,24 @@ func (pid *PIController) Initialise(current float64, goal float64) {
 	}
 }
 
+/*
+		estimate = c.pid.current*c.pid.AdaptivePI.slope
+        estimationError = measure - estimate
+        r1 = (c.pid.AdaptivePI.RlsPole * c.pid.current) ** 2
+        r2 = c.pid.AdaptivePI.ForgettingFactor + c.pid.AdaptivePI.RlsPole * (c.pid.current ** 2)
+        c.pid.AdaptivePI.RlsPole = 1/c.pid.AdaptivePI.ForgettingFactor * (c.pid.AdaptivePI.RlsPole - r1/r2)
+        d_coefficient = c.pid.AdaptivePI.RlsPole * c.pid.current * estimationError
+        c.pid.AdaptivePI.slope += d_coefficient
+*/
+
 func (c *PIDController) adaptivePiControlLoop(measure float64, e float64) {
 	glog.Info("Adaptive PI control loop")
-	estimationError := c.pid.current*c.pid.AdaptivePI.slope - measure
-	K := c.pid.AdaptivePI.RlsPole * c.pid.current /
-		(c.pid.AdaptivePI.ForgettingFactor + c.pid.AdaptivePI.RlsPole*math.Pow(c.pid.current, 2))
-	glog.Info(fmt.Sprintf("The estimation error is %f and the K is %f", estimationError, K))
-	c.pid.AdaptivePI.slope -= K * estimationError
-	c.pid.AdaptivePI.RlsPole -= math.Pow(c.pid.AdaptivePI.RlsPole, 2) * math.Pow(c.pid.current, 2) /
-		(c.pid.AdaptivePI.ForgettingFactor + c.pid.AdaptivePI.RlsPole*math.Pow(c.pid.current, 2))
-
+	estimationError := measure - c.pid.current*c.pid.AdaptivePI.slope
+	r1 := math.Pow(c.pid.AdaptivePI.RlsPole*c.pid.current, 2)
+	r2 := c.pid.AdaptivePI.ForgettingFactor + c.pid.AdaptivePI.RlsPole*math.Pow(c.pid.current, 2)
+	c.pid.AdaptivePI.RlsPole = 1 / c.pid.AdaptivePI.ForgettingFactor * (c.pid.AdaptivePI.RlsPole - r1/r2)
+	d_coeff := c.pid.AdaptivePI.RlsPole * c.pid.current * estimationError
+	c.pid.AdaptivePI.slope += d_coeff
 	coeffError := float64(c.pid.AdaptivePI.SignCorrection) * (1 - c.pid.AdaptivePI.Pole) / c.pid.AdaptivePI.slope
 	glog.Info(fmt.Sprintf("The coeffError is %f", coeffError))
 	c.pid.current += coeffError * e
