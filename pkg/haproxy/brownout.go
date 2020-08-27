@@ -220,15 +220,17 @@ func (c *controller) Update(backend *hatypes.Backend) {
 	}
 	c.lastUpdate = time.Now()
 
-	// If we have scaled recently, we need to wait before scaling again
-	if c.lastScalingUpdate.Add(c.scalingParams[backend.Name].Hysteresis).After(time.Now()) {
-		return
-	}
-
 	for deployment, config := range c.targets {
 		c.logger.Info("Considering deployment %q for scaling", config.DeploymentName)
-		c.currConfig.brownout.Deployments[config.DeploymentName] =
-			c.getScalerAdjustment(c.getSclaerInput(stats, backend.Name, dimmerAdjustment), deployment)
+		scalerAction := c.getScalerAdjustment(c.getSclaerInput(stats, backend.Name, dimmerAdjustment), deployment)
+		// If we have scaled recently, we need to wait before scaling again
+		if c.lastScalingUpdate.Add(c.scalingParams[config.DeploymentName].Hysteresis).After(time.Now()) {
+			c.logger.Info("Scaling cancelled as we are still in the hysteresis time")
+			continue
+		}
+		c.logger.Info("Last scaling at %q time now is %q and hysteresis is %s", c.lastScalingUpdate.String(),
+			time.Now().String(), c.scalingParams[backend.Name].Hysteresis)
+		c.currConfig.brownout.Deployments[config.DeploymentName] = scalerAction
 
 		c.logger.Info("Set deployment %q to %f replicas", config.DeploymentName,
 			c.currConfig.brownout.Deployments[config.DeploymentName])
