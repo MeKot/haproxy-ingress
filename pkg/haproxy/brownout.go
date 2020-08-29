@@ -226,23 +226,25 @@ func (c *controller) Update(backend *hatypes.Backend) {
 	}
 	c.lastUpdates[backend.Name] = time.Now()
 
-	for deployment, config := range c.targets {
-		c.logger.Info("Considering deployment %q for scaling", config.DeploymentName)
-		scalerAction := c.getScalerAdjustment(c.getSclaerInput(stats, backend.Name, dimmerAdjustment), deployment)
-		// If we have scaled recently, we need to wait before scaling again
-		if c.lastScalingUpdate.Add(c.scalingParams[config.DeploymentName].Hysteresis).After(time.Now()) {
-			c.logger.Info("Scaling cancelled as we are still in the hysteresis time")
-			continue
-		}
-		c.logger.Info("Last scaling at %q time now is %q and hysteresis is %s", c.lastScalingUpdate.String(),
-			time.Now().String(), c.scalingParams[backend.Name].Hysteresis)
-		deploymentConf := c.currConfig.brownout.Deployments[deployment]
-		deploymentConf.Replicas = scalerAction
-		c.currConfig.brownout.Deployments[deployment] = deploymentConf
-
-		c.logger.Info("Set deployment %q to %f replicas", config.DeploymentName,
-			c.currConfig.brownout.Deployments[config.DeploymentName].Replicas)
+	depl, ok := c.targets[backend.Name]
+	if !ok {
+		return
 	}
+	c.logger.Info("Considering deployment %q for scaling", depl.DeploymentName)
+	scalerAction := c.getScalerAdjustment(c.getSclaerInput(stats, backend.Name, dimmerAdjustment), backend.Name)
+	if c.lastScalingUpdate.Add(c.scalingParams[depl.DeploymentName].Hysteresis).After(time.Now()) {
+		c.logger.Info("Scaling cancelled as we are still in the hysteresis time")
+		return
+	}
+
+	c.logger.Info("Last scaling at %q time now is %q and hysteresis is %s", c.lastScalingUpdate.String(),
+		time.Now().String(), c.scalingParams[backend.Name].Hysteresis)
+	deploymentConf := c.currConfig.brownout.Deployments[backend.Name]
+	deploymentConf.Replicas = scalerAction
+	c.currConfig.brownout.Deployments[backend.Name] = deploymentConf
+
+	c.logger.Info("Set deployment %q to %f replicas", backend.Name,
+		c.currConfig.brownout.Deployments[backend.Name].Replicas)
 
 	c.updateDeployments()
 }
