@@ -38,13 +38,19 @@ type Acme struct {
 	Socket  string
 }
 
+type DeploymentData struct {
+	Name      string
+	Namespace string
+	Replicas  float64
+}
+
 type Brownout struct {
 	Enabled     bool
-	Rates       map[string]int      // Complete paths prefixed with the deployment prefix
-	Rules       string              // JSON string containing the brownout config
-	ACLMapPath  string              // Path to the ACL Map that stores rate limits
-	Deployments map[string]float64  // Map of deployments and the number of replicas in them
-	Client      clientset.Interface // K8s client interface to get/set the replicas per deployment
+	Rates       map[string]int            // Complete paths prefixed with the deployment prefix
+	Rules       string                    // JSON string containing the brownout config
+	ACLMapPath  string                    // Path to the ACL Map that stores rate limits
+	Deployments map[string]DeploymentData // Map of deployments and the number of replicas in them
+	Client      clientset.Interface       // K8s client interface to get/set the replicas per deployment
 }
 
 // Global ...

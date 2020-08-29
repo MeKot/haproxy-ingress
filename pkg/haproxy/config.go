@@ -81,7 +81,7 @@ func createConfig(options options) *config {
 		brownout: &hatypes.Brownout{
 			ACLMapPath:  options.mapsDir + "/_brownout_rates.map",
 			Rates:       make(map[string]int),
-			Deployments: make(map[string]float64),
+			Deployments: make(map[string]hatypes.DeploymentData),
 		},
 		global:       &hatypes.Global{},
 		frontend:     &hatypes.Frontend{Name: "_front001"},

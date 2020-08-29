@@ -87,7 +87,7 @@ func (i *instance) GetController() Controller {
 
 	i.logger.Info("Unmarshalled to %+v", c)
 
-	for _, configuration := range c.Targets {
+	for depl, configuration := range c.Targets {
 		if configuration.ScalingThreshold == 0 {
 			configuration.ScalingThreshold = 0.6
 		}
@@ -104,16 +104,20 @@ func (i *instance) GetController() Controller {
 		}
 
 		// Update the scaling parameters
-		v, ok := i.curConfig.Brownout().Deployments[configuration.DeploymentName]
+		v, ok := i.curConfig.Brownout().Deployments[depl]
 
 		if ok {
-			i.logger.Info("Deployment %q has %f replicas", configuration.DeploymentName, v)
+			i.logger.Info("Deployment %q has %f replicas", depl, v)
 		}
 
 		if !ok {
 			// Set to target replicas, so we update them on the next scalability action
-			i.curConfig.Brownout().Deployments[configuration.DeploymentName] = float64(configuration.TargetReplicas)
-			i.logger.Info("Det the number of replicas for %q at %d", configuration.DeploymentName, configuration.TargetReplicas)
+			i.curConfig.Brownout().Deployments[depl] = hatypes.DeploymentData{
+				Name:      configuration.DeploymentName,
+				Namespace: configuration.DeploymentNamespace,
+				Replicas:  float64(configuration.TargetReplicas),
+			}
+			i.logger.Info("Det the number of replicas for %q at %d", depl, configuration.TargetReplicas)
 		}
 	}
 
@@ -149,7 +153,7 @@ func (i *instance) GetController() Controller {
 			i.logger.Info(fmt.Sprintf("Failed to parse duration, setting to 60s"))
 			dur = time.Second * 60
 		}
-		out.scalingParams[conf.DeploymentName] = ScalerParams{
+		out.scalingParams[deployment] = ScalerParams{
 			Hysteresis: dur,
 			Threshold:  conf.ScalingThreshold,
 		}
@@ -230,7 +234,9 @@ func (c *controller) Update(backend *hatypes.Backend) {
 		}
 		c.logger.Info("Last scaling at %q time now is %q and hysteresis is %s", c.lastScalingUpdate.String(),
 			time.Now().String(), c.scalingParams[backend.Name].Hysteresis)
-		c.currConfig.brownout.Deployments[config.DeploymentName] = scalerAction
+		deploymentConf := c.currConfig.brownout.Deployments[deployment]
+		deploymentConf.Replicas = scalerAction
+		c.currConfig.brownout.Deployments[deployment] = deploymentConf
 
 		c.logger.Info("Set deployment %q to %f replicas", config.DeploymentName,
 			c.currConfig.brownout.Deployments[config.DeploymentName])
@@ -373,7 +379,7 @@ func (c *controller) updateBrownoutMap(path string, adjustment int) {
 func (c *controller) updateDeployments() {
 	c.logger.Info("Updating Deployments to %+v", c.currConfig.brownout.Deployments)
 	for depl, repl := range c.currConfig.brownout.Deployments {
-		d, err := c.currConfig.brownout.Client.AppsV1().Deployments("default").Get(depl, metav1.GetOptions{})
+		d, err := c.currConfig.brownout.Client.AppsV1().Deployments(repl.Namespace).Get(repl.Name, metav1.GetOptions{})
 
 		if err != nil {
 			c.logger.Error("could not get the deployement for %q", depl)
@@ -382,12 +388,12 @@ func (c *controller) updateDeployments() {
 		}
 
 		c.logger.Info(fmt.Sprintf("The scaler params are %+v for deployment %q", c.scalingParams[depl], depl))
-		desired := c.getReplicaCount(int(*d.Spec.Replicas), repl, c.scalingParams[depl].Threshold)
+		desired := c.getReplicaCount(int(*d.Spec.Replicas), repl.Replicas, c.scalingParams[depl].Threshold)
 		c.logger.Info("getReplicaCount returned %d", desired)
 
 		if int(*d.Spec.Replicas) != desired {
 			*d.Spec.Replicas = int32(desired)
-			_, err = c.currConfig.brownout.Client.AppsV1().Deployments("default").Update(d)
+			_, err = c.currConfig.brownout.Client.AppsV1().Deployments(repl.Namespace).Update(d)
 
 			if err != nil {
 				c.logger.Error("error updating the deployment %q", depl)
