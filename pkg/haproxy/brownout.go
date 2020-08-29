@@ -62,7 +62,7 @@ type ScalerParams struct {
 // controller used to perform runtime updates
 type controller struct {
 	reloadInterval    time.Duration
-	lastUpdate        time.Time
+	lastUpdates       map[string]time.Time
 	lastScalingUpdate time.Time
 	needsReload       bool
 	logger            types.Logger
@@ -117,7 +117,7 @@ func (i *instance) GetController() Controller {
 				Namespace: configuration.DeploymentNamespace,
 				Replicas:  float64(configuration.TargetReplicas),
 			}
-			i.logger.Info("Det the number of replicas for %q at %d", depl, configuration.TargetReplicas)
+			i.logger.Info("Set the number of replicas for %q at %d", depl, configuration.TargetReplicas)
 		}
 	}
 
@@ -133,7 +133,7 @@ func (i *instance) GetController() Controller {
 	out := &controller{
 		needsReload:       false,
 		logger:            i.logger,
-		lastUpdate:        time.Now(),
+		lastUpdates:       make(map[string]time.Time),
 		lastScalingUpdate: time.Now(),
 		reloadInterval:    reloadInterval,
 		targets:           c.Targets,
@@ -211,8 +211,10 @@ func (c *controller) Update(backend *hatypes.Backend) {
 	// Have to use ID here, as prometheus only exports backend IDs
 	c.recordResponseTime(backend.Name, stats)
 
-	if c.lastUpdate.Add(c.reloadInterval).After(time.Now()) {
-		//c.logger.Info("Waiting before next update")
+	lastUpdate, ok := c.lastUpdates[backend.Name]
+
+	if ok && lastUpdate.Add(c.reloadInterval).After(time.Now()) {
+		c.logger.Info("Waiting before next update for %q", backend.Name)
 		return
 	}
 
@@ -222,7 +224,7 @@ func (c *controller) Update(backend *hatypes.Backend) {
 		c.logger.InfoV(2, "Queued updates to be written to disks on next reload")
 		c.needsReload = false
 	}
-	c.lastUpdate = time.Now()
+	c.lastUpdates[backend.Name] = time.Now()
 
 	for deployment, config := range c.targets {
 		c.logger.Info("Considering deployment %q for scaling", config.DeploymentName)
@@ -239,7 +241,7 @@ func (c *controller) Update(backend *hatypes.Backend) {
 		c.currConfig.brownout.Deployments[deployment] = deploymentConf
 
 		c.logger.Info("Set deployment %q to %f replicas", config.DeploymentName,
-			c.currConfig.brownout.Deployments[config.DeploymentName])
+			c.currConfig.brownout.Deployments[config.DeploymentName].Replicas)
 	}
 
 	c.updateDeployments()
@@ -296,8 +298,9 @@ func (c *controller) getDimmerAdjustment(backend string, stats map[string]string
 		c.dimmers[backend].SetGoal(float64(c.targets[backend].DimmerTargetValue))
 
 		// Casting to int, as this directly corresponds to the rate for all non-essential endpoints
-		response = c.dimmers[backend].Next(cur, time.Now().Sub(c.lastUpdate))
+		response = c.dimmers[backend].Next(cur, time.Now().Sub(c.lastUpdates[backend]))
 	}
+	c.logger.Info(fmt.Sprintf("Dimmer response for %q is %f", backend, response))
 
 	return response
 }
