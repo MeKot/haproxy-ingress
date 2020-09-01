@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"github.com/jcmoraisjr/haproxy-ingress/pkg/brownout"
 	"strconv"
 	"time"
 
@@ -39,11 +40,13 @@ type metrics struct {
 	controllerParameter     *prometheus.GaugeVec
 	controllerActions       *prometheus.GaugeVec
 	lastTrack               time.Time
+	rtimeSlidingWindows     map[string]*brownout.StatsKeeper
 }
 
 func createMetrics(bucketsResponseTime []float64) *metrics {
 	namespace := "haproxyingress"
 	metrics := &metrics{
+		rtimeSlidingWindows: make(map[string]*brownout.StatsKeeper),
 		responseTime: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Namespace: namespace,
@@ -241,7 +244,11 @@ func (m *metrics) SetBrownOutFeatureStatus(feature string, currentValue float64,
 }
 
 func (m *metrics) SetBackendResponseTime(backend string, duration time.Duration) {
-	m.backendResponseTimes.WithLabelValues(backend).Set(duration.Seconds())
+	if _, ok := m.rtimeSlidingWindows[backend]; !ok {
+		m.rtimeSlidingWindows[backend] = brownout.CreateStatsKeeper(3)
+	}
+	m.rtimeSlidingWindows[backend].AddMeasurement(duration.Seconds())
+	m.backendResponseTimes.WithLabelValues(backend).Set(m.rtimeSlidingWindows[backend].GetAverage())
 }
 
 func (m *metrics) SetBackendNumberOfPods(backend string, pods int32) {
