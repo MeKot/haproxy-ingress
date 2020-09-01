@@ -52,6 +52,7 @@ type AdaptivePI struct {
 	oldRlsPole       float64
 	Pole             float64 `json:"pole"`
 	RlsPole          float64 `json:"rls_pole"`
+	RlsPoleLimits    *Limits `json:"rls_pole_limits"`
 	ForgettingFactor float64 `json:"forgetting_factor"`
 	SignCorrection   int     `json:"sign_correction"`
 	slope            float64
@@ -106,6 +107,9 @@ func (pid *PIController) Initialise(current float64, goal float64) {
 		if pid.AdaptivePI.SignCorrection == 0 {
 			pid.AdaptivePI.SignCorrection = 1
 		}
+		if pid.AdaptivePI.RlsPoleLimits.Max == 0 {
+			pid.AdaptivePI.RlsPoleLimits.Max = math.Inf(1)
+		}
 	}
 }
 
@@ -125,8 +129,12 @@ func (c *PIDController) adaptivePiControlLoop(measure float64, e float64) {
 	r1 := math.Pow(c.pid.AdaptivePI.RlsPole*c.pid.current, 2)
 	r2 := c.pid.AdaptivePI.ForgettingFactor + c.pid.AdaptivePI.RlsPole*math.Pow(c.pid.current, 2)
 	c.pid.AdaptivePI.RlsPole = 1 / c.pid.AdaptivePI.ForgettingFactor * (c.pid.AdaptivePI.RlsPole - r1/r2)
-	d_coeff := c.pid.AdaptivePI.RlsPole * c.pid.current * estimationError
-	c.pid.AdaptivePI.slope += d_coeff
+	c.pid.AdaptivePI.RlsPole = math.Max(
+		math.Min(c.pid.AdaptivePI.RlsPole, c.pid.AdaptivePI.RlsPoleLimits.Max),
+		c.pid.AdaptivePI.RlsPoleLimits.Min,
+	)
+	dCoeff := c.pid.AdaptivePI.RlsPole * c.pid.current * estimationError
+	c.pid.AdaptivePI.slope += dCoeff
 	coeffError := float64(c.pid.AdaptivePI.SignCorrection) * (1 - c.pid.AdaptivePI.Pole) / c.pid.AdaptivePI.slope
 	glog.Info(fmt.Sprintf("The coeffError is %f", coeffError))
 	c.pid.current += coeffError * e
@@ -146,6 +154,14 @@ func (c *PIDController) UpdateControllerParams(newParams PIController) {
 			c.pid.AdaptivePI.Pole = newParams.AdaptivePI.Pole
 			c.pid.AdaptivePI.RlsPole = newParams.AdaptivePI.RlsPole
 			c.pid.AdaptivePI.ForgettingFactor = newParams.AdaptivePI.ForgettingFactor
+		}
+		if c.pid.AdaptivePI.RlsPoleLimits.Max != newParams.AdaptivePI.RlsPoleLimits.Max ||
+			c.pid.AdaptivePI.RlsPoleLimits.Min != newParams.AdaptivePI.RlsPoleLimits.Min {
+			c.pid.AdaptivePI.RlsPoleLimits.Min = newParams.AdaptivePI.RlsPoleLimits.Min
+			c.pid.AdaptivePI.RlsPoleLimits.Max = newParams.AdaptivePI.RlsPoleLimits.Max
+			if newParams.AdaptivePI.RlsPoleLimits.Max <= 0 {
+				c.pid.AdaptivePI.RlsPoleLimits.Max = math.Inf(1)
+			}
 		}
 	} else {
 		c.pid.isAdaptivePI = false
@@ -240,6 +256,7 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 
 	c.Stats.AddMeasurement(current)
 	e := c.getError(c.Stats.GetAverage())
+	glog.Info(fmt.Sprintf("Current value is %f with error %f for %q-%q", current, e, c.MetricLabel, c.DeploymentName))
 
 	//if c.AutoTuningEnabled {
 	//	c.autoTuner.stepCounter++
