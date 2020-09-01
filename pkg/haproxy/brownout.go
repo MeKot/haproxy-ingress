@@ -209,7 +209,7 @@ func (c *controller) Update(backend *hatypes.Backend) {
 		return
 	}
 	// Have to use ID here, as prometheus only exports backend IDs
-	c.recordResponseTime(backend.Name, stats)
+	rtime := c.recordResponseTime(backend.Name, stats)
 
 	lastUpdate, ok := c.lastUpdates[backend.Name]
 
@@ -218,7 +218,7 @@ func (c *controller) Update(backend *hatypes.Backend) {
 		return
 	}
 
-	dimmerAdjustment := c.getDimmerAdjustment(backend.Name, stats)
+	dimmerAdjustment := c.getDimmerAdjustment(backend.Name, rtime)
 	c.execApplyACL(backend, int(dimmerAdjustment*float64(c.targets[backend.Name].RequestLimit)))
 	if c.needsReload {
 		c.logger.InfoV(2, "Queued updates to be written to disks on next reload")
@@ -282,26 +282,22 @@ func (c *controller) getScalerAdjustment(current float64, deployment string) flo
 }
 
 // Given the current error, returns the necessary adjustment for brownout ACL and rate limiting
-func (c *controller) getDimmerAdjustment(backend string, stats map[string]string) float64 {
+func (c *controller) getDimmerAdjustment(backend string, rtime float64) float64 {
 	// The PIController controller
 	response := 0.0
 
-	if current, ok := stats[c.targets[backend].Target]; ok {
-		cur, err := strconv.ParseFloat(current, 64)
-		if err != nil {
-			c.logger.Error("Failed to parse an int from %q", current)
-			c.logger.Error(fmt.Sprintf("The dimmer for %q is %+v", backend, c.dimmers[backend]))
-			dimmer, ok := c.dimmers[backend]
-			if !ok {
-				return 0
-			}
-			return dimmer.GetPrevious()
-		}
-		c.dimmers[backend].SetGoal(float64(c.targets[backend].DimmerTargetValue))
-
-		// Casting to int, as this directly corresponds to the rate for all non-essential endpoints
-		response = c.dimmers[backend].Next(cur, time.Now().Sub(c.lastUpdates[backend]))
+	if _, ok := c.dimmers[backend]; !ok {
+		return 0
 	}
+
+	if rtime < 0 {
+		return c.dimmers[backend].GetPrevious()
+	}
+
+	c.dimmers[backend].SetGoal(float64(c.targets[backend].DimmerTargetValue))
+
+	// Casting to int, as this directly corresponds to the rate for all non-essential endpoints
+	response = c.dimmers[backend].Next(rtime, time.Now().Sub(c.lastUpdates[backend]))
 	c.logger.Info(fmt.Sprintf("Dimmer response for %q is %f", backend, response))
 
 	return response
@@ -344,20 +340,24 @@ func (c *controller) readStats(id string) (map[string]string, error) {
 	return m, nil
 }
 
-func (c *controller) recordResponseTime(backend string, stats map[string]string) {
+func (c *controller) recordResponseTime(backend string, stats map[string]string) float64 {
 	curr, ok := stats["rtime"]
 	if !ok {
 		c.logger.Error("rtime was not returned by HAProxy")
-		return
+		return -1
 	}
 	rtime, err := time.ParseDuration(fmt.Sprintf("%s%s", stats["rtime"], "ms"))
 	if err != nil {
 		c.logger.Error("failed to parse rtime from %s", curr)
-		return
+		return -1
 	}
 
 	c.metrics.SetBackendResponseTime(backend, rtime)
-
+	rtimeValue, conversion_err := strconv.ParseFloat(curr, 64)
+	if conversion_err != nil {
+		return -1
+	}
+	return rtimeValue
 }
 
 // Adds Rate Limiting ACL to the config, enforcing brownout at the LB level
