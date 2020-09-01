@@ -244,6 +244,10 @@ func (c *PIDController) getError(current float64) float64 {
 		)
 		return 0
 	}
+	glog.Info(
+		fmt.Sprintf("The error is %f for setpoint %f and current value %f for %q", c.pid.goal-current,
+			c.pid.goal, current, c.DeploymentName),
+	)
 	return c.pid.goal - current
 }
 
