@@ -74,6 +74,7 @@ type controller struct {
 	scalingParams     map[string]ScalerParams
 	dimmers           map[string]brownout.Controller
 	scalers           map[string]brownout.Controller
+	rtimes            map[string]*brownout.StatsKeeper
 }
 
 func (i *instance) GetController() Controller {
@@ -144,6 +145,7 @@ func (i *instance) GetController() Controller {
 		scalingParams:     make(map[string]ScalerParams),
 		dimmers:           make(map[string]brownout.Controller),
 		scalers:           make(map[string]brownout.Controller),
+		rtimes:            make(map[string]*brownout.StatsKeeper),
 	}
 	for deployment, conf := range c.Targets {
 		out.createDimmerController(conf, deployment)
@@ -157,6 +159,7 @@ func (i *instance) GetController() Controller {
 			Hysteresis: dur,
 			Threshold:  conf.ScalingThreshold,
 		}
+		out.rtimes[deployment] = brownout.CreateStatsKeeper(10)
 	}
 	return out
 }
@@ -203,6 +206,9 @@ func (c *controller) createScalerController(conf TargetConfig, deployment string
 
 // Coordinates metric collection and updates the config with any necessary action
 func (c *controller) Update(backend *hatypes.Backend) {
+	if _, ok := c.rtimes[backend.Name]; !ok {
+		return
+	}
 	stats, err := c.readStats(backend.ID)
 	if err != nil {
 		c.logger.Error(err.Error())
@@ -210,6 +216,7 @@ func (c *controller) Update(backend *hatypes.Backend) {
 	}
 	// Have to use ID here, as prometheus only exports backend IDs
 	rtime := c.recordResponseTime(backend.Name, stats)
+	c.rtimes[backend.Name].AddMeasurement(rtime)
 
 	lastUpdate, ok := c.lastUpdates[backend.Name]
 
@@ -218,7 +225,7 @@ func (c *controller) Update(backend *hatypes.Backend) {
 		return
 	}
 
-	dimmerAdjustment := c.getDimmerAdjustment(backend.Name, rtime)
+	dimmerAdjustment := c.getDimmerAdjustment(backend.Name, c.rtimes[backend.Name].GetAverage())
 	c.execApplyACL(backend, int(dimmerAdjustment*float64(c.targets[backend.Name].RequestLimit)))
 	if c.needsReload {
 		c.logger.InfoV(2, "Queued updates to be written to disks on next reload")
