@@ -245,7 +245,7 @@ func (m *metrics) SetBrownOutFeatureStatus(feature string, currentValue float64,
 
 func (m *metrics) SetBackendResponseTime(backend string, duration time.Duration) {
 	if _, ok := m.rtimeSlidingWindows[backend]; !ok {
-		m.rtimeSlidingWindows[backend] = brownout.CreateStatsKeeper(3)
+		m.rtimeSlidingWindows[backend] = brownout.CreateStatsKeeper(1)
 	}
 	m.rtimeSlidingWindows[backend].AddMeasurement(duration.Seconds())
 	m.backendResponseTimes.WithLabelValues(backend).Set(m.rtimeSlidingWindows[backend].GetAverage())
