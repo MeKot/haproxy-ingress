@@ -63,7 +63,7 @@ type ScalerParams struct {
 type controller struct {
 	reloadInterval    time.Duration
 	lastUpdates       map[string]time.Time
-	lastScalingUpdate time.Time
+	lastScalingUpdate map[string]time.Time
 	needsReload       bool
 	logger            types.Logger
 	targets           map[string]TargetConfig
@@ -135,7 +135,7 @@ func (i *instance) GetController() Controller {
 		needsReload:       false,
 		logger:            i.logger,
 		lastUpdates:       make(map[string]time.Time),
-		lastScalingUpdate: time.Now(),
+		lastScalingUpdate: make(map[string]time.Time),
 		reloadInterval:    reloadInterval,
 		targets:           c.Targets,
 		cmd:               utils.HAProxyCommandWithReturn,
@@ -160,6 +160,7 @@ func (i *instance) GetController() Controller {
 			Threshold:  conf.ScalingThreshold,
 		}
 		out.rtimes[deployment] = brownout.CreateStatsKeeper(10)
+		out.lastScalingUpdate[deployment] = time.Now()
 	}
 	return out
 }
@@ -238,13 +239,13 @@ func (c *controller) Update(backend *hatypes.Backend) {
 		return
 	}
 	c.logger.Info("Considering deployment %q for scaling", depl.DeploymentName)
-	scalerAction := c.getScalerAdjustment(c.getSclaerInput(stats, backend.Name, dimmerAdjustment), backend.Name)
-	if c.lastScalingUpdate.Add(c.scalingParams[depl.DeploymentName].Hysteresis).After(time.Now()) {
+	scalerAction := c.getScalerAdjustment(c.getSclaerInput(rtime, backend.Name, dimmerAdjustment), backend.Name)
+	if c.lastScalingUpdate[backend.Name].Add(c.scalingParams[backend.Name].Hysteresis).After(time.Now()) {
 		c.logger.Info("Scaling cancelled as we are still in the hysteresis time")
 		return
 	}
 
-	c.logger.Info("Last scaling at %q time now is %q and hysteresis is %s", c.lastScalingUpdate.String(),
+	c.logger.Info("Last scaling at %q time now is %q and hysteresis is %s", c.lastScalingUpdate[backend.Name].String(),
 		time.Now().String(), c.scalingParams[backend.Name].Hysteresis)
 	deploymentConf := c.currConfig.brownout.Deployments[backend.Name]
 	deploymentConf.Replicas = scalerAction
@@ -256,16 +257,12 @@ func (c *controller) Update(backend *hatypes.Backend) {
 	c.updateDeployments()
 }
 
-func (c *controller) getSclaerInput(stats map[string]string, backend string, dimmerAdj float64) float64 {
+func (c *controller) getSclaerInput(rtime float64, backend string, dimmerAdj float64) float64 {
 	switch c.targets[backend].ScalerInput {
 	case DimmerOutput:
 		return dimmerAdj
 	case Metric:
-		res, err := strconv.ParseFloat(stats[c.targets[backend].Target], 64)
-		if err != nil {
-			c.logger.Error("Failed to parse metric value when passing to scaler")
-		}
-		return res
+		return rtime
 	}
 	c.logger.Error("Did not match any valid input type for scaler")
 	return 0
@@ -285,7 +282,7 @@ func (c *controller) execApplyACL(backend *hatypes.Backend, adjustment int) {
 func (c *controller) getScalerAdjustment(current float64, deployment string) float64 {
 	c.logger.Info("Scaler goal is %f, current is %f", c.targets[deployment].ScalerTargetValue, current)
 	c.scalers[deployment].SetGoal(c.targets[deployment].ScalerTargetValue)
-	return c.scalers[deployment].Next(current, time.Now().Sub(c.lastScalingUpdate))
+	return c.scalers[deployment].Next(current, time.Now().Sub(c.lastScalingUpdate[deployment]))
 }
 
 // Given the current error, returns the necessary adjustment for brownout ACL and rate limiting
@@ -412,7 +409,7 @@ func (c *controller) updateDeployments() {
 				c.logger.Error(err.Error())
 			}
 
-			c.lastScalingUpdate = time.Now()
+			c.lastScalingUpdate[depl] = time.Now()
 		}
 		c.metrics.SetBackendNumberOfPods(depl, *d.Spec.Replicas)
 
