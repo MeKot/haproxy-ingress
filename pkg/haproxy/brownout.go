@@ -40,7 +40,7 @@ type TargetConfig struct {
 	TargetReplicas              int                   `json:"target_replicas"`
 	MaxReplicas                 int                   `json:"max_replicas"`
 	DeploymentNamespace         string                `json:"deployment_namespace"`
-	DeploymentName              string                `json:"deployment_name"`
+	DeploymentNames             []string              `json:"deployment_names"`
 	ScalerMeasurementWindowSize int                   `json:"scaler_measurement_window_size"`
 	DimmerMeasurementWindowSize int                   `json:"dimmer_measurement_window_size"`
 	ScalerInput                 ControllerInput       `json:"scaler_in"`
@@ -114,7 +114,7 @@ func (i *instance) GetController() Controller {
 		if !ok {
 			// Set to target replicas, so we update them on the next scalability action
 			i.curConfig.Brownout().Deployments[depl] = hatypes.DeploymentData{
-				Name:      configuration.DeploymentName,
+				Names:     configuration.DeploymentNames,
 				Namespace: configuration.DeploymentNamespace,
 				Replicas:  float64(configuration.TargetReplicas),
 			}
@@ -234,11 +234,11 @@ func (c *controller) Update(backend *hatypes.Backend) {
 	}
 	c.lastUpdates[backend.Name] = time.Now()
 
-	depl, ok := c.targets[backend.Name]
+	_, ok = c.targets[backend.Name]
 	if !ok {
 		return
 	}
-	c.logger.Info("Considering deployment %q for scaling", depl.DeploymentName)
+	c.logger.Info("Considering deployment %q for scaling", backend.Name)
 	scalerAction := c.getScalerAdjustment(c.getSclaerInput(rtime, backend.Name, dimmerAdjustment), backend.Name)
 	if c.lastScalingUpdate[backend.Name].Add(c.scalingParams[backend.Name].Hysteresis).After(time.Now()) {
 		c.logger.Info("Scaling cancelled as we are still in the hysteresis time")
@@ -388,31 +388,36 @@ func (c *controller) updateBrownoutMap(path string, adjustment int) {
 func (c *controller) updateDeployments() {
 	c.logger.Info("Updating Deployments to %+v", c.currConfig.brownout.Deployments)
 	for depl, repl := range c.currConfig.brownout.Deployments {
-		d, err := c.currConfig.brownout.Client.AppsV1().Deployments(repl.Namespace).Get(repl.Name, metav1.GetOptions{})
-
-		if err != nil {
-			c.logger.Error("could not get the deployement for %q", depl)
-			c.logger.Error(err.Error())
+		if len(repl.Names) == 0 {
+			c.logger.Warn(fmt.Sprintf("Deployment %q has no replicas to scale", depl))
 			continue
 		}
-
-		c.logger.Info(fmt.Sprintf("The scaler params are %+v for deployment %q", c.scalingParams[depl], depl))
-		desired := c.getReplicaCount(int(*d.Spec.Replicas), repl.Replicas, c.scalingParams[depl].Threshold)
-		c.logger.Info("getReplicaCount returned %d", desired)
-
-		if int(*d.Spec.Replicas) != desired {
-			*d.Spec.Replicas = int32(desired)
-			_, err = c.currConfig.brownout.Client.AppsV1().Deployments(repl.Namespace).Update(d)
+		for _, name := range repl.Names {
+			d, err := c.currConfig.brownout.Client.AppsV1().Deployments(repl.Namespace).Get(name, metav1.GetOptions{})
 
 			if err != nil {
-				c.logger.Error("error updating the deployment %q", depl)
+				c.logger.Error("could not get the deployement for %q", depl)
 				c.logger.Error(err.Error())
+				continue
 			}
 
-			c.lastScalingUpdate[depl] = time.Now()
-		}
-		c.metrics.SetBackendNumberOfPods(depl, *d.Spec.Replicas)
+			c.logger.Info(fmt.Sprintf("The scaler params are %+v for deployment %q", c.scalingParams[depl], depl))
+			desired := c.getReplicaCount(int(*d.Spec.Replicas), repl.Replicas, c.scalingParams[depl].Threshold)
+			c.logger.Info("getReplicaCount returned %d", desired)
 
+			if int(*d.Spec.Replicas) != desired {
+				*d.Spec.Replicas = int32(desired)
+				_, err = c.currConfig.brownout.Client.AppsV1().Deployments(repl.Namespace).Update(d)
+
+				if err != nil {
+					c.logger.Error("error updating the deployment %q", depl)
+					c.logger.Error(err.Error())
+				}
+
+				c.lastScalingUpdate[depl] = time.Now()
+			}
+			c.metrics.SetBackendNumberOfPods(depl, *d.Spec.Replicas)
+		}
 	}
 }
 

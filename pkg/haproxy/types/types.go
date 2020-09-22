@@ -39,7 +39,7 @@ type Acme struct {
 }
 
 type DeploymentData struct {
-	Name      string
+	Names     []string
 	Namespace string
 	Replicas  float64
 }
