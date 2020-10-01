@@ -139,15 +139,14 @@ func (c *PIDController) adaptivePiControlLoop(measure float64, e float64) {
 	//c.pid.AdaptivePI.slope += dCoeff
 
 	// RLS conditional update
-
 	estimationError := measure - c.pid.current*c.pid.AdaptivePI.slope
 	k := c.pid.AdaptivePI.RlsPole * c.pid.current / (c.pid.AdaptivePI.ForgettingFactor + c.pid.AdaptivePI.Pole*math.Pow(c.pid.current, 2))
-	c.pid.AdaptivePI.slope += k * estimationError
 
 	candidateRlsPole := c.pid.AdaptivePI.RlsPole * (1 - k*c.pid.current) / c.pid.AdaptivePI.ForgettingFactor
 	updateConditionCoefficient := c.pid.AdaptivePI.RlsPoleLimits.Min // TODO reusing c.pid.AdaptivePI.RlsPoleLimits.Min as configuration parameters. Should be renamed if change accepted
 	if candidateRlsPole*math.Pow(c.pid.current, 2) > updateConditionCoefficient*(1.-c.pid.AdaptivePI.ForgettingFactor) {
 		c.pid.AdaptivePI.RlsPole = candidateRlsPole
+		c.pid.AdaptivePI.slope += k * estimationError
 	}
 
 	coeffError := float64(c.pid.AdaptivePI.SignCorrection) * (1 - c.pid.AdaptivePI.Pole) / c.pid.AdaptivePI.slope
