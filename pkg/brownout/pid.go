@@ -128,11 +128,19 @@ func (c *PIDController) adaptivePiControlLoop(measure float64, e float64) {
 	estimationError := measure - c.pid.current*c.pid.AdaptivePI.slope
 	r1 := math.Pow(c.pid.AdaptivePI.RlsPole*c.pid.current, 2)
 	r2 := c.pid.AdaptivePI.ForgettingFactor + c.pid.AdaptivePI.RlsPole*math.Pow(c.pid.current, 2)
-	c.pid.AdaptivePI.RlsPole = 1 / c.pid.AdaptivePI.ForgettingFactor * (c.pid.AdaptivePI.RlsPole - r1/r2)
-	c.pid.AdaptivePI.RlsPole = math.Max(
-		math.Min(c.pid.AdaptivePI.RlsPole, c.pid.AdaptivePI.RlsPoleLimits.Max),
-		c.pid.AdaptivePI.RlsPoleLimits.Min,
-	)
+
+	candidateRlsPole := 1 / c.pid.AdaptivePI.ForgettingFactor * (c.pid.AdaptivePI.RlsPole - r1/r2)
+	updateConditionCoefficient := c.pid.AdaptivePI.RlsPoleLimits.Min // TODO reusing c.pid.AdaptivePI.RlsPoleLimits.Min as configuration parameters. Should be renamed if change accepted
+	if candidateRlsPole*math.Pow(c.pid.current, 2) > updateConditionCoefficient*(1.-c.pid.AdaptivePI.ForgettingFactor) {
+		c.pid.AdaptivePI.RlsPole = candidateRlsPole
+	}
+
+	// Hard limit on the RLS pole value
+	//c.pid.AdaptivePI.RlsPole = 1 / c.pid.AdaptivePI.ForgettingFactor * (c.pid.AdaptivePI.RlsPole - r1/r2)
+	//c.pid.AdaptivePI.RlsPole = math.Max(
+	//	math.Min(c.pid.AdaptivePI.RlsPole, c.pid.AdaptivePI.RlsPoleLimits.Max),
+	//	c.pid.AdaptivePI.RlsPoleLimits.Min,
+	//)
 	dCoeff := c.pid.AdaptivePI.RlsPole * c.pid.current * estimationError
 	c.pid.AdaptivePI.slope += dCoeff
 	coeffError := float64(c.pid.AdaptivePI.SignCorrection) * (1 - c.pid.AdaptivePI.Pole) / c.pid.AdaptivePI.slope
