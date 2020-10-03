@@ -260,6 +260,7 @@ func (c *PIDController) pushMetrics(error float64, deployment string) {
 }
 
 func (c *PIDController) getError(current float64) float64 {
+	glog.Info(fmt.Sprintf("The limits are %+v and current value is %f", c.pid.ZeroedErrorLimits, current))
 	if current > c.pid.ZeroedErrorLimits.Min && current < c.pid.ZeroedErrorLimits.Max {
 		glog.Info(
 			fmt.Sprintf("Error is zero as current metric value %f is in range [%f, %f]",
@@ -283,7 +284,7 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 
 	c.Stats.AddMeasurement(current)
 	e := c.getError(c.Stats.GetAverage())
-	glog.Info(fmt.Sprintf("Current value is %f with error %f for %q-%q", current, e, c.MetricLabel, c.DeploymentName))
+	glog.Info(fmt.Sprintf("Current value is %f with error %f for %q-%q", c.Stats.GetAverage(), e, c.MetricLabel, c.DeploymentName))
 
 	//if c.AutoTuningEnabled {
 	//	c.autoTuner.stepCounter++
@@ -296,16 +297,16 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 	//	c.autoTune(e, lastUpdate, c.Stats.GetAverage())
 	//} else {
 	if c.pid.isAdaptivePI {
-		c.adaptivePiControlLoop(current, e)
+		c.adaptivePiControlLoop(c.Stats.GetAverage(), e)
 	} else {
-		c.pidControlLoop(current, e, lastUpdate)
+		c.pidControlLoop(c.Stats.GetAverage(), e, lastUpdate)
 	}
 	//}
 
 	c.clampOutput()
 	c.pushMetrics(e, c.DeploymentName)
 
-	glog.Info(fmt.Sprintf("Controller output is %f for the input %f which is an error of %f", c.pid.current, current,
+	glog.Info(fmt.Sprintf("Controller output is %f for the input %f which is an error of %f", c.pid.current, c.Stats.GetAverage(),
 		e))
 	return c.pid.current
 }
