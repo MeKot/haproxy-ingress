@@ -216,12 +216,18 @@ func (c *PIDController) pidControlLoop(measure float64, e float64, lastUpdate ti
 	proportionalAction := c.pid.P * e
 	c.pid.integralSum += c.pid.Ti * e * lastUpdate.Seconds()
 	c.pid.integralSum = math.Min(math.Max(c.pid.integralSum, c.OutLimits.Min), c.OutLimits.Max)
-	prev := c.pid.previousMeasure
-	if prev == 0 {
-		prev = measure
-	}
-	c.pid.previousMeasure = measure
-	dMeasure := measure - prev
+
+	//prev := c.pid.previousMeasure
+	//if prev == 0 {
+	//	prev = measure
+	//}
+	//c.pid.previousMeasure = measure
+	//dMeasure := measure - prev
+
+	prev := c.pid.previousMeasure // TODO: if change confirmed, rename field
+	c.pid.previousMeasure = e
+	dMeasure := prev - e
+
 	derivativeAction := c.pid.D * dMeasure / lastUpdate.Seconds()
 	c.Metrics.SetControllerActionValue(derivativeAction, "derivative", c.MetricLabel, c.DeploymentName)
 	c.pid.current = proportionalAction + c.pid.integralSum + derivativeAction
@@ -230,7 +236,7 @@ func (c *PIDController) pidControlLoop(measure float64, e float64, lastUpdate ti
 	//c.pid.current = proportionalAction + c.pid.integralSum + (c.pid.P*(lastUpdate.Seconds()/c.pid.Ti))*e
 	glog.Info(
 		fmt.Sprintf(
-			"Poportional action is %f and controller response is %f", proportionalAction, c.pid.current,
+			"Measure: %f - Error: %f - P: %f - I: %f - D: %f - PID: %f", measure, e, proportionalAction, c.pid.integralSum, derivativeAction, c.pid.current,
 		),
 	)
 	return proportionalAction
@@ -283,8 +289,9 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 	c.pid.currentLoopCount = 0
 
 	c.Stats.AddMeasurement(current)
-	e := c.getError(c.Stats.GetAverage())
-	glog.Info(fmt.Sprintf("Current value is %f with error %f for %q-%q", c.Stats.GetAverage(), e, c.MetricLabel, c.DeploymentName))
+	filteredMeasure := c.Stats.GetAverage()
+	e := c.getError(filteredMeasure)
+	glog.Info(fmt.Sprintf("Current value is %f with error %f for %q-%q", filteredMeasure, e, c.MetricLabel, c.DeploymentName))
 
 	//if c.AutoTuningEnabled {
 	//	c.autoTuner.stepCounter++
@@ -297,16 +304,16 @@ func (c *PIDController) Next(current float64, lastUpdate time.Duration) float64 
 	//	c.autoTune(e, lastUpdate, c.Stats.GetAverage())
 	//} else {
 	if c.pid.isAdaptivePI {
-		c.adaptivePiControlLoop(c.Stats.GetAverage(), e)
+		c.adaptivePiControlLoop(filteredMeasure, e)
 	} else {
-		c.pidControlLoop(c.Stats.GetAverage(), e, lastUpdate)
+		c.pidControlLoop(filteredMeasure, e, lastUpdate)
 	}
 	//}
 
 	c.clampOutput()
 	c.pushMetrics(e, c.DeploymentName)
 
-	glog.Info(fmt.Sprintf("Controller output is %f for the input %f which is an error of %f", c.pid.current, c.Stats.GetAverage(),
+	glog.Info(fmt.Sprintf("Controller output is %f for the input %f which is an error of %f", c.pid.current, filteredMeasure,
 		e))
 	return c.pid.current
 }
