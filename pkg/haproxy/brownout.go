@@ -227,7 +227,7 @@ func (c *controller) Update(backend *hatypes.Backend) {
 	}
 
 	dimmerAdjustment := c.getDimmerAdjustment(backend.Name, c.rtimes[backend.Name].GetAverage())
-	c.execApplyACL(backend, int(dimmerAdjustment*float64(c.targets[backend.Name].RequestLimit)))
+	//c.execApplyACL(backend, int(dimmerAdjustment*float64(c.targets[backend.Name].RequestLimit)))
 	if c.needsReload {
 		c.logger.InfoV(2, "Queued updates to be written to disks on next reload")
 		c.needsReload = false
@@ -371,7 +371,7 @@ func (c *controller) addRateLimitToConfig(path string, rate int, deployment stri
 		c.logger.InfoV(2, "Updated the path %q from %d to %d in the rates map %p", path, curr, rate,
 			&c.currConfig.brownout.Rates)
 		c.currConfig.brownout.Rates[path] = rate
-		c.updateBrownoutMap(path, rate)
+		//c.updateBrownoutMap(path, rate)
 		c.needsReload = true
 	}
 	c.metrics.SetBrownOutFeatureStatus(path, float64(rate), deployment)
@@ -406,17 +406,17 @@ func (c *controller) updateDeployments() {
 			c.logger.Info("getReplicaCount returned %d", desired)
 
 			if int(*d.Spec.Replicas) != desired {
-				*d.Spec.Replicas = int32(desired)
-				_, err = c.currConfig.brownout.Client.AppsV1().Deployments(repl.Namespace).Update(d)
+				//*d.Spec.Replicas = int32(desired)
+				//_, err = c.currConfig.brownout.Client.AppsV1().Deployments(repl.Namespace).Update(d)
 
-				if err != nil {
-					c.logger.Error("error updating the deployment %q", depl)
-					c.logger.Error(err.Error())
-				}
+				//if err != nil {
+				//	c.logger.Error("error updating the deployment %q", depl)
+				//	c.logger.Error(err.Error())
+				//}
 
 				c.lastScalingUpdate[depl] = time.Now()
 			}
-			c.metrics.SetBackendNumberOfPods(depl, *d.Spec.Replicas)
+			c.metrics.SetBackendNumberOfPods(fmt.Sprintf("%q-%q", depl, name), *d.Spec.Replicas)
 		}
 	}
 }
